@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "meeting-recorder", "runtimeExecutable": "bun", "runtimeArgs": ["--watch", "run", "server.ts"], "port": 3456 }
+  ]
+}

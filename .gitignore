@@ -1,0 +1,8 @@
+node_modules/
+meetings/
+config.json
+.env
+.DS_Store
+bin/
+glossary.json
+templates.json

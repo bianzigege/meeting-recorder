@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>会议录音纪要</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">🎙️ 会议录音纪要</div>
+    <div class="top-actions">
+      <button id="btnAsk" class="ghost">问资料库</button>
+      <button id="btnGlossary" class="ghost">词库</button>
+      <button id="btnTemplates" class="ghost">模板</button>
+      <button id="btnSettings" class="ghost">设置</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- 左侧:录音 + 列表 -->
+    <aside class="sidebar">
+      <section class="card recorder">
+        <div id="recSetup">
+          <input id="title" class="title-input" placeholder="会议标题(可选)" />
+          <input id="guest" class="title-input" placeholder="嘉宾名字(可选,多位用顿号分隔)" />
+          <div class="seg" id="modeSeg" role="radiogroup">
+            <label><input type="radio" name="mode" value="both" checked /><span>录屏 + 声音</span></label>
+            <label><input type="radio" name="mode" value="audio" /><span>仅声音</span></label>
+            <label><input type="radio" name="mode" value="screen" /><span>仅录屏</span></label>
+          </div>
+          <div class="field" id="sourceField">
+            <div class="field-head">
+              <span>录制范围</span>
+              <button type="button" id="btnSources" class="ghost small">刷新</button>
+            </div>
+            <select id="source"><option value="">整个屏幕(主显示器)</option></select>
+          </div>
+          <label class="check" id="micField">
+            <input type="checkbox" id="withMic" checked />
+            <span>收录麦克风(我的声音,和会议对方的声音分两轨保存)</span>
+          </label>
+        </div>
+        <div id="recLive" hidden>
+          <div class="live-title" id="liveTitle"></div>
+          <div class="live-state"><span class="dot" id="liveDot"></span><span id="liveState">启动中</span></div>
+          <div class="live-markers" id="liveMarkers"></div>
+        </div>
+        <div class="rec-row">
+          <button id="btnRec" class="primary">● 开始录制</button>
+          <button id="btnPause" class="ghost" hidden>暂停</button>
+          <button id="btnMark" class="ghost" hidden>打点</button>
+          <span id="timer" class="timer">00:00</span>
+        </div>
+        <div class="hint" id="recHint">录制时菜单栏会显示计时。快捷键:⌃⌥⌘P 暂停 / ⌃⌥⌘M 打点 / ⌃⌥⌘S 停止。</div>
+        <div class="divider">或</div>
+        <div class="import-row">
+          <label class="upload">
+            <input type="file" id="fileInput" accept="audio/*,video/*" multiple hidden />
+            <span>📁 导入文件</span>
+          </label>
+          <button type="button" class="upload" id="btnVoiceMemos">🎙️ 语音备忘录</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="list-head">
+          <h3>会议记录</h3>
+          <div class="list-actions">
+            <button id="btnSelect" class="ghost small">多选</button>
+            <button id="btnBatch" class="ghost small">批量分析</button>
+            <button id="btnRefresh" class="ghost small">刷新</button>
+          </div>
+        </div>
+        <input id="search" class="search" type="search" placeholder="搜索标题、逐字稿和分析结果" autocomplete="off" />
+        <ul id="list" class="list"></ul>
+        <ul id="searchResults" class="list search-results" hidden></ul>
+        <div class="select-bar" id="selectBar" hidden>
+          <label class="check inline"><input type="checkbox" id="selAll" /> <span>全选</span></label>
+          <span id="selCount" class="hint">已选 0 条</span>
+          <span class="spacer"></span>
+          <button class="ghost small" id="btnSelCancel">取消</button>
+          <button class="ghost small danger" id="btnSelDelete">删除所选</button>
+        </div>
+        <div class="list-foot">
+          <span id="listStats" class="hint"></span>
+          <button class="ghost small" id="btnTrash">🗑 最近删除</button>
+        </div>
+      </section>
+    </aside>
+
+    <!-- 右侧:详情 -->
+    <section class="detail card" id="detail">
+      <div class="empty" id="emptyDetail">录一段会议,或者在左边选一条记录。</div>
+      <div id="detailBody" hidden>
+        <div class="detail-head">
+          <div class="title-row">
+            <h2 id="dTitle" contenteditable="true" spellcheck="false" title="点击修改标题"></h2>
+            <button type="button" class="ghost small" id="btnAutoTitle" title="让 Claude 根据内容起标题">✨ 起标题</button>
+          </div>
+          <div class="meta-line">
+            <span id="dTime"></span> · <span id="dDuration"></span> · <span id="dStatus" class="badge"></span>
+          </div>
+          <video id="dVideo" controls preload="metadata" hidden></video>
+          <audio id="dAudio" controls preload="none"></audio>
+          <div class="markers" id="dMarkers" hidden></div>
+          <div class="speakers" id="dSpeakers" hidden>
+            <span class="lbl">说话人</span>
+            <label>麦克风 <input id="spMe" placeholder="我" /></label>
+            <label>会议对方 <input id="spGuest" placeholder="嘉宾" /></label>
+            <button type="button" class="ghost small" id="btnSpeakers">保存名字</button>
+          </div>
+          <div class="warn" id="dWarn" hidden></div>
+          <div class="storage" id="dStorage" hidden>
+            <span id="dSize"></span>
+            <button type="button" class="ghost small" id="btnStripVideo" hidden>删除视频,保留音频和文字</button>
+            <button type="button" class="ghost small" id="btnStripAll" hidden>删除录音文件,只保留文字</button>
+          </div>
+          <div class="actions">
+            <button id="btnTranscribe" class="primary">① 转写文字</button>
+            <button id="btnAnalyze" class="primary">② 分析所选</button>
+            <button id="btnCopy" class="ghost">复制当前页</button>
+            <button id="btnDownload" class="ghost">下载 .md</button>
+            <button id="btnSrt" class="ghost">字幕 .srt</button>
+            <button id="btnDelete" class="danger ghost">删除</button>
+          </div>
+          <div class="tpl-picker" id="tplPicker" aria-label="分析模板"></div>
+          <div id="dError" class="error" hidden></div>
+        </div>
+
+        <div class="tabs" id="tabs"></div>
+        <div id="paneResult" class="pane">
+          <div class="result-tools" id="mindmapTools" hidden>
+            <button class="ghost small" id="btnFit">适应窗口</button>
+            <button class="ghost small" id="btnExportSvg">导出 SVG</button>
+            <button class="ghost small" id="btnExportPng">导出 PNG</button>
+          </div>
+          <div class="mindmap" id="mindmapWrap" hidden><svg id="mindmap"></svg></div>
+          <div id="resultView" class="md"></div>
+          <div id="resultEmpty" class="empty small">还没有分析结果。先转写,再勾选模板点「分析所选」。</div>
+        </div>
+        <div id="paneTranscript" class="pane" hidden>
+          <div class="tr-tools">
+            <div class="seg-mini" id="trMode">
+              <button type="button" data-mode="read" class="active">阅读</button>
+              <button type="button" data-mode="edit">编辑</button>
+            </div>
+            <label class="check inline" id="trFollowWrap"><input type="checkbox" id="trFollow" checked /> <span>播放时跟随</span></label>
+            <span class="hint" id="transcriptHint">点任意一句,从那里开始播放。</span>
+          </div>
+          <div id="trRead" class="tr-read"></div>
+          <div id="trEdit" hidden>
+            <textarea id="transcriptEdit" placeholder="还没有转写。点上面的「转写文字」。"></textarea>
+            <div class="row-end"><button id="btnSaveTranscript" class="ghost small">保存修改</button></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 通用提示 / 确认(浏览器面板会屏蔽系统弹窗,所以自己画) -->
+  <dialog id="uiDlg" class="ui-dlg">
+    <form method="dialog" class="settings-form">
+      <h3 id="uiTitle"></h3>
+      <div id="uiMsg" class="ui-msg"></div>
+      <div class="row-end">
+        <button type="button" class="ghost" id="uiCancel">取消</button>
+        <button type="button" class="primary" id="uiOk">好</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 最近删除 -->
+  <dialog id="trashDlg" class="wide">
+    <div class="settings-form">
+      <h3>最近删除</h3>
+      <p class="hint">删除的记录在这里保留 30 天,之后自动彻底删除。</p>
+      <ul id="trashList" class="pick-list"></ul>
+      <div class="row-end">
+        <button type="button" class="ghost danger" id="btnTrashEmpty">全部彻底删除</button>
+        <span class="spacer"></span>
+        <button type="button" class="primary" id="btnCloseTrash">关闭</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- 问资料库 -->
+  <dialog id="askDlg" class="wide">
+    <div class="settings-form ask">
+      <div class="ask-head">
+        <h3>问资料库</h3>
+        <button type="button" class="ghost small" id="btnAskClear">新对话</button>
+      </div>
+      <p class="hint">根据所有转写过的会议回答,回答里的出处可以点,直接跳到那场会议的那一句。会消耗 Claude 额度。</p>
+      <div id="askLog" class="ask-log">
+        <div class="empty small">比如:「最近几场分享里,关于选品都说过什么?」「嘉宾提到的佣金比例前后有没有变化?」</div>
+      </div>
+      <form id="askForm" class="ask-form">
+        <textarea id="askInput" rows="2" placeholder="输入问题,回车发送,Shift+回车换行"></textarea>
+        <div class="row-end">
+          <button type="button" class="ghost" id="btnCloseAsk">关闭</button>
+          <button type="submit" class="primary" id="btnAskSend">提问</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- 语音备忘录 -->
+  <dialog id="vmDlg" class="wide">
+    <div class="settings-form">
+      <h3>从语音备忘录导入</h3>
+      <p class="hint">读取 Mac 上「语音备忘录」App 的录音(打开了 iCloud 同步的话,也包括 iPhone 上录的)。只复制,不会改动原录音。</p>
+      <label class="check"><input type="checkbox" id="vmAuto" /> <span>以后有新录音自动导入</span></label>
+      <div id="vmError" class="error" hidden></div>
+      <button type="button" class="ghost small" id="btnVmPrivacy" hidden>打开系统设置</button>
+      <ul id="vmList" class="pick-list"><li class="empty small">读取中…</li></ul>
+      <div class="row-end">
+        <label class="check inline"><input type="checkbox" id="vmAll" /> <span>全选未导入的</span></label>
+        <span class="spacer"></span>
+        <button type="button" class="ghost" id="btnCloseVm">关闭</button>
+        <button type="button" class="primary" id="btnVmImport">导入所选</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- 批量分析 -->
+  <dialog id="batchDlg" class="wide">
+    <div class="settings-form">
+      <h3>批量分析</h3>
+      <p class="hint">勾选记录和模板,加入后台队列一条一条处理。还没转写的会先转写。可以关掉窗口,处理完列表里会显示「已完成」。</p>
+      <div class="tpl-picker" id="batchTpl"></div>
+      <ul id="batchList" class="pick-list"></ul>
+      <div class="row-end">
+        <label class="check inline"><input type="checkbox" id="batchAll" /> <span>全选</span></label>
+        <span class="spacer"></span>
+        <button type="button" class="ghost" id="btnCloseBatch">取消</button>
+        <button type="button" class="primary" id="btnBatchRun">加入队列</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- 词库 -->
+  <dialog id="glossaryDlg">
+    <form method="dialog" class="settings-form" id="glossaryForm">
+      <h3>专有名词词库</h3>
+      <p class="hint">每行一个词。等号后面写语音识别常见的错写,用逗号分隔:转写完会自动替换,分析时 Claude 也会按这张表纠正。</p>
+      <textarea id="glossaryText" rows="14" spellcheck="false" placeholder="TSP = PSP, 踢艾斯批&#10;TAP = 太普&#10;辫子哥哥&#10;HEYNEW = 嘿牛"></textarea>
+      <div class="row-end">
+        <button type="button" class="ghost" id="btnCloseGlossary">取消</button>
+        <button type="submit" class="primary">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 模板 -->
+  <dialog id="templatesDlg" class="wide">
+    <div class="settings-form">
+      <h3>分析模板</h3>
+      <p class="hint">每个模板是一段提示词。新增功能只要加一个模板。「默认勾选」的模板会在分析时自动选中。</p>
+      <div class="tpl-editor">
+        <div class="tpl-list-col">
+          <ul id="tplList" class="tpl-list"></ul>
+          <div class="tpl-list-actions">
+            <button type="button" class="ghost small" id="btnTplNew">新建</button>
+            <button type="button" class="ghost small" id="btnTplCopy">复制</button>
+            <button type="button" class="ghost small danger" id="btnTplDelete">删除</button>
+          </div>
+        </div>
+        <div class="tpl-form" id="tplForm">
+          <label>名称 <input id="tplName" /></label>
+          <div class="tpl-row">
+            <label>输出 <select id="tplFormat"><option value="markdown">文稿(Markdown)</option><option value="mindmap">思维导图</option></select></label>
+            <label class="check inline"><input type="checkbox" id="tplDefaultOn" /> <span>默认勾选</span></label>
+          </div>
+          <label>提示词 <textarea id="tplPrompt" rows="14"></textarea></label>
+          <div class="hint">「只依据转写、不编造、时间戳写成 [mm:ss]、直接输出正文」这些通用要求会自动加上,不用写。</div>
+        </div>
+      </div>
+      <div class="row-end">
+        <button type="button" class="ghost" id="btnTplReset">恢复默认模板</button>
+        <span class="spacer"></span>
+        <button type="button" class="ghost" id="btnCloseTemplates">取消</button>
+        <button type="button" class="primary" id="btnSaveTemplates">保存</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- 设置弹窗 -->
+  <dialog id="settings">
+    <form method="dialog" class="settings-form" id="settingsForm">
+      <h3>设置</h3>
+      <p class="hint">所有设置和密钥只保存在本机的 config.json 里。</p>
+
+      <fieldset>
+        <legend>转写(语音转文字)</legend>
+        <div class="radio-row">
+          <label><input type="radio" name="transcribeProvider" value="local" /> 本机识别(macOS 自带,离线免费)</label>
+          <label><input type="radio" name="transcribeProvider" value="api" /> Whisper 接口(Groq / OpenAI 等)</label>
+        </div>
+        <label>语言 <input name="transcribeLanguage" placeholder="zh / en / ja" /></label>
+        <label>我的名字(分轨录制时,逐字稿里用它代替「我」;留空就写「我」) <input name="myName" data-allow-empty placeholder="比如:辫子" /></label>
+        <div class="sub" data-provider="transcribe-api">
+          <label>接口地址 <input name="transcribeBaseUrl" placeholder="https://api.groq.com/openai/v1" /></label>
+          <label>API Key <input name="transcribeApiKey" type="password" placeholder="留空则不改" autocomplete="off" /></label>
+          <label>模型 <input name="transcribeModel" placeholder="whisper-large-v3-turbo" /></label>
+          <div class="hint">任何 OpenAI 兼容接口都行:Groq(免费额度大)、OpenAI、硅基流动,或本机跑的 whisper.cpp server。</div>
+        </div>
+        <div class="hint" data-provider="transcribe-local" id="localHint">本机识别需要 macOS 26 或更新版本,首次使用会自动下载语音模型。</div>
+      </fieldset>
+
+      <fieldset>
+        <legend>自动化</legend>
+        <label class="check"><input type="checkbox" name="autoTranscribe" /> <span>录制或导入后自动转写</span></label>
+        <label class="check"><input type="checkbox" name="autoAnalyze" /> <span>转写完自动用「默认勾选」的模板分析(会消耗 Claude 额度)</span></label>
+        <label class="check"><input type="checkbox" name="autoTitle" /> <span>没起标题的录音,转写完让 Claude 根据内容起一个(用小模型,很省额度)</span></label>
+        <label class="check"><input type="checkbox" name="discardShort" /> <span>少于 5 秒的录制当作误触,自动放进「最近删除」</span></label>
+        <label class="check"><input type="checkbox" name="autoImportVoiceMemos" /> <span>自动导入新的语音备忘录(只导入打开这个开关之后录的;iPhone 录的要先通过 iCloud 同步到这台 Mac)</span></label>
+      </fieldset>
+
+      <fieldset id="backupBox">
+        <legend>备份</legend>
+        <label class="check"><input type="checkbox" id="backupOn" /> <span id="backupOnText">自动备份到 iCloud 云盘</span></label>
+        <input type="hidden" name="backupDir" data-allow-empty />
+        <div class="sub" id="backupDetail">
+          <div class="hint" id="backupPath"></div>
+          <div class="radio-row">
+            <label><input type="radio" name="backupScope" value="text" /> 只备份文字(逐字稿、分析结果、标题等,几乎不占空间)</label>
+            <label><input type="radio" name="backupScope" value="audio" /> 文字 + 音频(能重新转写、能回听;一小时约 100 MB)</label>
+            <label><input type="radio" name="backupScope" value="all" /> 全部,含录屏视频(一小时约 1–1.5 GB;iCloud 云盘默认在本机也存一份,会多占硬盘)</label>
+          </div>
+          <div class="status-row">
+            <span class="hint" id="backupStatus"></span>
+            <span>
+              <button type="button" class="ghost small" id="btnBackupNow">立即备份</button>
+              <button type="button" class="ghost small" id="btnBackupReveal">打开备份文件夹</button>
+              <button type="button" class="ghost small" id="btnBackupRestore">从备份恢复</button>
+            </span>
+          </div>
+          <div class="hint">改动后约 1 分钟自动备份,另外每 30 分钟检查一次。彻底删除的记录,备份里也会删掉;API 密钥不会备份。</div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>纪要(Claude)</legend>
+        <div class="radio-row">
+          <label><input type="radio" name="summaryProvider" value="cli" /> 用我的 Claude 账号(Claude Code)</label>
+          <label><input type="radio" name="summaryProvider" value="api" /> Anthropic API Key</label>
+        </div>
+        <div class="sub" data-provider="summary-cli">
+          <div class="status-row">
+            <span id="cliStatus" class="hint">登录状态:检测中…</span>
+            <button type="button" class="ghost small" id="btnCheckCli">重新检测</button>
+          </div>
+          <label>模型 <input name="claudeCliModel" placeholder="opus / sonnet / 完整模型名" /></label>
+          <label>claude 命令路径(留空自动查找) <input name="claudeCliPath" placeholder="/Users/你/.local/bin/claude" /></label>
+        </div>
+        <div class="sub" data-provider="summary-api">
+          <label>API Key <input name="anthropicApiKey" type="password" placeholder="留空则不改" autocomplete="off" /></label>
+          <label>Base URL <input name="anthropicBaseUrl" placeholder="留空用官方地址,用中转站就填中转地址" /></label>
+          <label>模型 <input name="claudeModel" placeholder="claude-opus-5-5" /></label>
+        </div>
+        <div class="hint">纪要和其他分析的提示词在右上角「模板」里修改。</div>
+      </fieldset>
+
+      <div class="row-end">
+        <button type="button" class="ghost" id="btnCloseSettings">取消</button>
+        <button type="submit" class="primary">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/vendor/d3.js"></script>
+  <script src="/vendor/markmap-lib.js"></script>
+  <script src="/vendor/markmap-view.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
