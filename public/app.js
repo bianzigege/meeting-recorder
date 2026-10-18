@@ -991,7 +991,7 @@ $("#btnCloseAsk").onclick = () => askDlg.close();
 $("#btnAskClear").onclick = () => {
   if (askBusy) return;
   askHistory = [];
-  $("#askLog").innerHTML = `<div class="empty small">新对话。问题会基于所有转写过的会议来回答。</div>`;
+  $("#askLog").innerHTML = `<div class="empty small">新对话。问题会基于所有转写过的会议和行动项来回答。</div>`;
 };
 $("#askInput").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("#askForm").requestSubmit(); }

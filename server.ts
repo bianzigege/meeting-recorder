@@ -1297,6 +1297,7 @@ const ASK_SYSTEM = `你是用户的会议资料库助手。用户是主讲人,�
 - 每个要点后面标注出处,格式严格写成 [[M编号 mm:ss]],例如 [[M2 13:05]];时间取逐字稿里最接近的时间戳。同一要点有多处出处可以写多个。
 - M编号只用在出处标记里;正文里提到某场会议时写它的标题,不要写 M编号。
 - 涉及多场会议时,可以对比不同场次说法的异同,并说明是哪一场。
+- 资料里可能附有「任务清单」:会议上定下的行动项,带负责人、状态、截止日期和定下它的那场会议及时间戳。问到「谁负责 / 做了没 / 哪次会定的 / 还有什么没做」这类问题时,以任务清单为准回答状态,再用逐字稿补充当时怎么说的;出处同样写 [[M编号 mm:ss]]。
 - 用 Markdown,简洁直接,不要开场白。`;
 
 // ---------- 行动项(会议变行动) ----------
@@ -1665,19 +1666,32 @@ async function askLibrary(question: string, history: AskTurn[], onEvent: (type: 
   const header = (m: (typeof all)[number]) => `${m.ref}「${m.meta.title}」${new Date(m.meta.createdAt).toLocaleDateString("zh-CN")} 时长 ${fmtTime(m.meta.durationSec)}`;
   const historyText = history.slice(-3).map((t) => `用户之前问:${t.q}\n你之前答:${t.a}`).join("\n\n");
 
+  // 任务清单:所有会议的行动项,标上定下它的那场会议编号和时间戳,问「谁负责 / 做没做 / 哪次会定的」时直接可答
+  const refById = new Map(all.map((m) => [m.meta.id, m.ref]));
+  const STATUS_CN: Record<ActionStatus, string> = { pending: "待确认(AI 提取,还没人确认)", todo: "待办", doing: "进行中", done: "已完成", dropped: "搁置" };
+  const taskLines = (await listAllActions())
+    .filter((a) => refById.has(a.meetingId))
+    .map((a) => {
+      const ref = refById.get(a.meetingId)!;
+      const src = a.source ? `[${ref} ${fmtTime(a.source.t)}]` : `[${ref}]`;
+      const extra = [a.due ? `截止 ${a.due}` : "", a.doneAt ? `完成于 ${a.doneAt.slice(0, 10)}` : "", a.note ? `备注:${a.note}` : "", a.source?.quote ? `原话「${a.source.quote}」` : ""].filter(Boolean).join(" | ");
+      return `- ${src} ${a.owner || "待定"}:${a.text} | 状态:${STATUS_CN[a.status]}${extra ? " | " + extra : ""}`;
+    });
+  const tasksBlock = taskLines.length ? `<tasks>\n今天是 ${localDate()}。任务清单(方括号里是定下它的会议编号和时间戳):\n${taskLines.join("\n")}\n</tasks>` : "";
+
   let chosen = all;
   const total = all.reduce((n, m) => n + m.transcript.length, 0);
   if (total > ASK_ALL_LIMIT) {
     onEvent("stage", { text: `资料库共 ${all.length} 场,先挑出相关的会议…` });
     const catalog = all.map((m) => `${header(m)}\n${m.brief.replace(/\s+/g, " ")}`).join("\n\n");
     const pick = await call(
-      "你帮用户从会议目录里挑出和问题相关的会议。只输出编号,用逗号分隔,最多 6 个,例如:M3,M7。一个都不相关就输出:无",
-      `${historyText ? historyText + "\n\n" : ""}问题:${question}\n\n会议目录:\n${catalog}`,
+      "你帮用户从会议目录里挑出和问题相关的会议。只输出编号,用逗号分隔,最多 6 个,例如:M3,M7。一个都不相关就输出:无。目录后面可能附有任务清单,问题如果是关于某个任务的,把定下它的那场会议也挑上。",
+      `${historyText ? historyText + "\n\n" : ""}问题:${question}\n\n会议目录:\n${catalog}${tasksBlock ? "\n\n" + tasksBlock : ""}`,
       () => {},
     );
     const refs = new Set(pick.match(/M\d+/g) || []);
     chosen = all.filter((m) => refs.has(m.ref));
-    if (!chosen.length) {
+    if (!chosen.length && !tasksBlock) {
       onEvent("sources", { sources: [] });
       const text = "资料库里没有找到和这个问题相关的会议。";
       onEvent("delta", { text });
@@ -1685,13 +1699,16 @@ async function askLibrary(question: string, history: AskTurn[], onEvent: (type: 
     }
   }
 
-  onEvent("sources", { sources: chosen.map((m) => ({ ref: m.ref, id: m.meta.id, title: m.meta.title, createdAt: m.meta.createdAt })) });
+  // 任务清单里引用到的会议也要进出处列表,点 [[M2 13:05]] 才跳得过去
+  const cited = new Set(chosen.map((m) => m.ref));
+  for (const line of taskLines) { const r = line.match(/^- \[(M\d+)/)?.[1]; if (r) cited.add(r); }
+  onEvent("sources", { sources: all.filter((m) => cited.has(m.ref)).map((m) => ({ ref: m.ref, id: m.meta.id, title: m.meta.title, createdAt: m.meta.createdAt })) });
   const docs = chosen.map((m) => {
     const t = m.transcript.length > ASK_PER_MEETING_LIMIT ? m.transcript.slice(0, ASK_PER_MEETING_LIMIT) + "\n(后面内容过长已省略)" : m.transcript;
     return `<meeting ref="${m.ref}">\n${header(m)}\n${t}\n</meeting>`;
   }).join("\n\n");
   const glossary = glossaryNote(await loadGlossary());
-  const prompt = `${glossary ? glossary + "\n\n" : ""}${docs}\n\n${historyText ? historyText + "\n\n" : ""}现在的问题:${question}`;
+  const prompt = `${glossary ? glossary + "\n\n" : ""}${tasksBlock ? tasksBlock + "\n\n" : ""}${docs}\n\n${historyText ? historyText + "\n\n" : ""}现在的问题:${question}`;
   return call(ASK_SYSTEM, prompt, (t) => onEvent("delta", { text: t }));
 }
 
