@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(ROOT, "public");
-const MEETINGS_DIR = path.join(ROOT, "meetings");
+const MEETINGS_DIR = process.env.MEETINGS_DIR ? path.resolve(process.env.MEETINGS_DIR) : path.join(ROOT, "meetings"); // 可指到别处(示例数据 / 线上版)
 const CONFIG_PATH = path.join(ROOT, "config.json");
 const TRANSCRIBE_BIN = path.join(ROOT, "bin", "transcribe");
 const TRANSCRIBE_SRC = path.join(ROOT, "native", "transcribe.swift");
@@ -1463,9 +1463,12 @@ async function briefing() {
   const meetings = await listMeetings();
   const all = await listAllActions();
   const t = localDate();
-  const withActions = meetings.filter((m) => all.some((a) => a.meetingId === m.id));
+  // 「上次会议」= 最近一场有已确认任务的会议;刚转写完、任务还全是待确认的那场单独提一句
+  const withActions = meetings.filter((m) => all.some((a) => a.meetingId === m.id && a.status !== "pending"));
   const last = withActions[0] || null;
-  const lastItems = last ? all.filter((a) => a.meetingId === last.id) : [];
+  const lastItems = last ? all.filter((a) => a.meetingId === last.id && a.status !== "pending") : [];
+  const newest = meetings.find((m) => all.some((a) => a.meetingId === m.id));
+  const pendingNewest = newest && newest.id !== last?.id ? all.filter((a) => a.meetingId === newest.id && a.status === "pending").length : 0;
   const count = (list: typeof all, st: ActionStatus) => list.filter((a) => a.status === st).length;
   const live = all.filter((a) => a.status === "todo" || a.status === "doing");
   const overdue = live.filter((a) => a.due && a.due < t);
@@ -1476,8 +1479,10 @@ async function briefing() {
   const line = last
     ? `上次会议(${lastDate})定了 ${lastItems.filter((a) => a.status !== "pending").length} 件事:完成 ${count(lastItems, "done")},未完成 ${lastOpen}${overdue.length ? `,逾期 ${overdue.length}` : ""}`
     : "还没有记录过行动项";
+  const pendingNote = pendingNewest ? `;最近一场「${newest!.title}」还有 ${pendingNewest} 条待确认` : "";
   const item = (a: (typeof all)[number]) => `- ${a.owner || "待定"}:${a.text}${a.due ? `(${fmtD(a.due)})` : ""}`;
   const lines = [`📊 会前汇报(${fmtD(t)})`, ""];
+  if (pendingNewest) lines.push(`最近一场「${newest!.title}」刚转写完,有 ${pendingNewest} 条行动项等你确认。`, "");
   if (last) {
     lines.push(`上次会议「${last.title}」(${lastDate})定了 ${lastItems.filter((a) => a.status !== "pending").length} 件事:完成 ${count(lastItems, "done")} · 进行中 ${count(lastItems, "doing")} · 待办 ${count(lastItems, "todo")}${count(lastItems, "dropped") ? ` · 搁置 ${count(lastItems, "dropped")}` : ""}`, "");
   }
@@ -1490,8 +1495,8 @@ async function briefing() {
   return {
     lastMeeting: last ? { id: last.id, title: last.title, createdAt: last.createdAt } : null,
     counts: { last: lastItems.filter((a) => a.status !== "pending").length, lastDone: count(lastItems, "done"), lastOpen, open: live.length, overdue: overdue.length, dueSoon: dueSoon.length },
-    line,
-    text: lines.filter((l) => l !== "" || true).join("\n").replace(/\n{3,}/g, "\n\n"),
+    line: line + pendingNote,
+    text: lines.join("\n").replace(/\n{3,}/g, "\n\n"),
   };
 }
 
