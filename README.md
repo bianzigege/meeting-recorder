@@ -205,3 +205,12 @@ iCloud 云盘里的文件默认在本机也保留一份,所以备份视频会多
 ## License
 
 MIT
+
+## 网页演示版(MatrixNEXT 2026 参赛)
+
+在线体验:https://sanhui-kaigong.pages.dev
+
+- 和本地版是同一套页面。`web/demo.js` 在浏览器里接管 `/api/*`,三场示例会议(`samples/`)的数据和访客的改动都只存在访客自己的浏览器里。
+- 需要 AI 的四个动作(问资料库、分析、提取行动项、对照旧任务)走 `web/functions/demo-api` 云端函数,调用 MOI Genesis(qwen3.8-flash,关闭思考)。Key 只放在 Cloudflare 的环境变量里。
+- 提示词和纯逻辑在 `shared/core.js`,本地服务、演示页、云端函数共用。
+- 本地预览:`web/dev.sh`(http://localhost:8788);发布:`web/deploy.sh`。

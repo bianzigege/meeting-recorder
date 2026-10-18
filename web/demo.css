@@ -1,0 +1,19 @@
+/* 网页演示版:藏起 Mac 版才有的功能,加说明条 */
+#recSetup, #recLive, .recorder .rec-row, #recHint, .recorder .divider, .import-row,
+#btnSettings, #btnGlossary, #btnTemplates, #btnTrash, #btnSelect, #btnBatch,
+#btnTranscribe, #btnDelete, #btnSrt, #dStorage, #btnAutoTitle, #btnRemindTest { display: none !important; }
+.demo-tag { font-size: 12px; font-weight: 600; padding: 1px 8px; margin-left: 6px; border-radius: 999px; background: #fef3c7; color: #92400e; vertical-align: 2px; }
+.demo-banner { max-width: 1280px; margin: 12px auto 0; padding: 12px 16px; border: 1px solid #f59e0b; border-radius: 12px; background: color-mix(in srgb, #f59e0b 8%, var(--card)); font-size: 13.5px; line-height: 1.6; display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; }
+.demo-banner-text { grid-column: 1; }
+.demo-steps { grid-column: 1; margin: 4px 0 0; padding-left: 20px; color: var(--muted); }
+.demo-banner-ops { grid-column: 2; grid-row: 1 / span 2; align-self: start; }
+.demo-intro { font-size: 13px; line-height: 1.6; color: var(--muted); margin-bottom: 4px; }
+.demo-intro b { color: var(--text); }
+.demo-tag, .top-actions button { white-space: nowrap; }
+@media (max-width: 720px) {
+  .demo-banner { grid-template-columns: 1fr; margin: 12px 12px 0; }
+  .demo-banner-ops { grid-column: 1; grid-row: auto; }
+  .brand { font-size: 16px; }
+  .top-actions button { padding: 6px 10px; font-size: 13px; }
+  .layout > .detail { order: -1; } /* 手机上先看会议详情,列表在下面 */
+}

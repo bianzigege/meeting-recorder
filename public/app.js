@@ -649,7 +649,8 @@ async function openMeeting(id, keepTab = false) {
   $("#dDuration").textContent = fmtTime(current.durationSec);
   setStatus(current.status);
   showError(current.error);
-  const mediaUrl = current.audioFile ? `/api/meetings/${id}/audio` : "";
+  // 网页演示版的录音是静态文件
+  const mediaUrl = !current.audioFile ? "" : window.DEMO ? `/samples/${id}/${current.audioFile}` : `/api/meetings/${id}/audio`;
   const v = $("#dVideo"), a = $("#dAudio");
   v.hidden = !current.hasVideo; a.hidden = !!current.hasVideo || !mediaUrl;
   if (current.hasVideo) { if (!v.src.endsWith(mediaUrl)) v.src = mediaUrl; a.removeAttribute("src"); }
@@ -1291,7 +1292,8 @@ fetch("/api/ping").catch(() => {});
 let actions = [], actionsBusy = false;
 const ACT_STATUS = { pending: "待确认", todo: "待办", doing: "进行中", done: "已完成", dropped: "搁置" };
 const ACT_ORDER = { pending: 0, doing: 1, todo: 2, done: 3, dropped: 4 };
-const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+// 网页演示版把「今天」固定在第三场会议的第二天
+const today = () => { if (window.DEMO?.today) return window.DEMO.today; const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const dueClass = (a) => (!a.due || a.status === "done" || a.status === "dropped") ? "" : a.due < today() ? "overdue" : a.due === today() ? "due-today" : "";
 const dueLabel = (a) => !a.due ? "" : a.due < today() && a.status !== "done" && a.status !== "dropped" ? "已逾期" : a.due === today() ? "今天到期" : "";
 const statusSelect = (a) => `<select class="act-status s-${a.status}" data-f="status">${Object.entries(ACT_STATUS).filter(([k]) => k !== "pending" || a.status === "pending").map(([k, v]) => `<option value="${k}"${k === a.status ? " selected" : ""}>${v}</option>`).join("")}</select>`;

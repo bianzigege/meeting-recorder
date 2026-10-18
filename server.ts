@@ -3,6 +3,7 @@
 // 双击 会议录音纪要.app 会自动启动本服务并打开窗口
 
 import Anthropic from "@anthropic-ai/sdk";
+import * as core from "./shared/core.js";
 import { COMMON_RULES, DEFAULT_TEMPLATES, type Template } from "./templates.ts";
 import { Database } from "bun:sqlite";
 import { mkdir, readdir, readFile, writeFile, rm, rename, stat, cp, copyFile, utimes } from "node:fs/promises";
@@ -1291,17 +1292,11 @@ async function searchMeetings(q: string) {
 const ASK_ALL_LIMIT = 120_000; // 字
 const ASK_PER_MEETING_LIMIT = 60_000;
 
-const ASK_SYSTEM = `你是用户的会议资料库助手。用户是主讲人,资料是他录制的会议 / 分享的逐字稿(语音识别结果,可能有错别字)。
-根据提供的资料回答用户的问题:
-- 只依据资料回答,资料里没有的就直接说"资料里没有提到",不要编造。
-- 每个要点后面标注出处,格式严格写成 [[M编号 mm:ss]],例如 [[M2 13:05]];时间取逐字稿里最接近的时间戳。同一要点有多处出处可以写多个。
-- M编号只用在出处标记里;正文里提到某场会议时写它的标题,不要写 M编号。
-- 涉及多场会议时,可以对比不同场次说法的异同,并说明是哪一场。
-- 资料里可能附有「任务清单」:会议上定下的行动项,带负责人、状态、截止日期和定下它的那场会议及时间戳。问到「谁负责 / 做了没 / 哪次会定的 / 还有什么没做」这类问题时,以任务清单为准回答状态,再用逐字稿补充当时怎么说的;出处同样写 [[M编号 mm:ss]]。
-- 用 Markdown,简洁直接,不要开场白。`;
+const ASK_SYSTEM = core.ASK_SYSTEM;
 
 // ---------- 行动项(会议变行动) ----------
 // 每场会议一个 actions.json:AI 从逐字稿里提取「谁 / 做什么 / 什么时候」,先进「待确认」,人确认后才算正式任务。
+// 提示词和纯逻辑在 shared/core.js,网页演示版也用同一份。
 type ActionStatus = "pending" | "todo" | "doing" | "done" | "dropped";
 type ActionItem = {
   id: string;
@@ -1318,7 +1313,7 @@ type ActionItem = {
   doneAt?: string;
 };
 
-const ACTION_STATUSES: ActionStatus[] = ["pending", "todo", "doing", "done", "dropped"];
+const { normalizeDue, parseTimestamp, extractJsonArray, newActionId, localDate, shiftDate } = core;
 
 function actionsPath(id: string) { return path.join(meetingDir(id), "actions.json"); }
 
@@ -1333,119 +1328,22 @@ async function writeActions(id: string, list: ActionItem[]) {
   await writeFile(actionsPath(id), JSON.stringify(list, null, 2));
 }
 
-const newActionId = () => "a" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-
-// 「下周三」这类相对时间由模型换算,这里只做兜底校验
-function normalizeDue(v: unknown): string | null {
-  if (typeof v !== "string") return null;
-  const m = v.trim().match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
-  if (!m) return null;
-  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  if (isNaN(d.getTime())) return null;
-  return `${m[1]}-${String(Number(m[2])).padStart(2, "0")}-${String(Number(m[3])).padStart(2, "0")}`;
-}
-
-function parseTimestamp(v: unknown): number | null {
-  if (typeof v === "number" && isFinite(v)) return Math.max(0, Math.floor(v));
-  const m = String(v ?? "").match(/(\d{1,3}):(\d{2})/);
-  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
-}
-
-const normText = (s: string) => s.replace(/[\s,。,.;;:：、「」『』“”"'()()【】\[\]-]/g, "").toLowerCase();
-
-// 从模型输出里把 JSON 数组抠出来(模型可能包 ```json 围栏或多说两句)
-function extractJsonArray(raw: string): any[] {
-  const cleaned = raw.replace(/```(?:json)?/gi, "").trim();
-  const start = cleaned.indexOf("[");
-  const end = cleaned.lastIndexOf("]");
-  if (start < 0 || end <= start) throw new Error("模型没有返回 JSON 数组:" + cleaned.slice(0, 120));
-  const arr = JSON.parse(cleaned.slice(start, end + 1));
-  if (!Array.isArray(arr)) throw new Error("模型返回的不是数组");
-  return arr;
-}
-
-function meetingDateLine(meta: Meta) {
-  const d = new Date(meta.createdAt);
-  const weekday = "日一二三四五六"[d.getDay()];
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}(周${weekday})`;
-}
-
-const ACTIONS_SYSTEM = `你是会议行动项提取器。从会议逐字稿里找出所有「某人承诺要做的具体事情」,输出一个 JSON 数组,不要输出任何其他文字。
-
-每个元素的字段:
-- "text": 做什么,一句话,动词开头,具体到可以判断做没做(例如「把报价单发给客户」,不要「跟进报价」)
-- "owner": 谁负责。用逐字稿里的说话人名字或被点名的人名;听不出来就写 ""
-- "due": 截止日期,格式 YYYY-MM-DD。「下周三」「月底前」「明天」这类相对时间,按会议日期换算成具体日期;没提到就写 null
-- "due_text": 原话里的时间表述,如「下周三」;没有就写 ""
-- "time": 这件事在逐字稿里出现的时间戳,照抄行首的 mm:ss
-- "quote": 承诺这件事的原话,30 字以内,照抄逐字稿
-- "confidence": 0 到 1,你有多确定这是一个明确的行动项
-
-规则:
-- 只提「要去做的事」,不提已经做完的事、纯讨论、纯结论、泛泛的「以后要注意」
-- 同一件事只出一条,不要拆成多条
-- 一场会通常 3 到 12 条;确实没有就输出 []
-- 人名、品牌名按专有名词表纠正
-- 严格输出 JSON,不要 Markdown 围栏`;
+const patchAction = (a: ActionItem, body: any): ActionItem => core.patchAction(a, body, new Date().toISOString());
 
 async function extractActions(id: string): Promise<{ added: number; items: ActionItem[] }> {
   const cfg = await loadConfig();
   const meta = await readMeta(id);
   const transcript = (await readTextIfExists(path.join(meetingDir(id), "transcript.txt"))).trim();
   if (transcript.length < 30) throw new Error("逐字稿内容太少,提不出行动项");
-  const names = [cfg.myName, meta.speakerNames?.mic, meta.speakerNames?.system].filter(Boolean);
-  const prompt = [
-    `会议日期:${meetingDateLine(meta)}。相对时间以此为基准换算。`,
-    names.length ? `已知参会人:${names.join("、")}。` : "",
-    glossaryNote(await loadGlossary()),
-    "",
-    "<transcript>",
-    transcript.slice(0, 60000),
-    "</transcript>",
-  ].filter((l) => l !== undefined).join("\n");
-  const raw = await summarize(cfg, ACTIONS_SYSTEM, prompt, () => {});
-  const arr = extractJsonArray(raw);
+  const names = [cfg.myName, meta.speakerNames?.mic, meta.speakerNames?.system].filter(Boolean) as string[];
   const existing = await readActions(id);
-  const seen = new Set(existing.map((a) => normText(a.text)));
-  const now = new Date().toISOString();
-  const fresh: ActionItem[] = [];
-  for (const x of arr) {
-    const text = String(x?.text || "").trim();
-    if (!text || seen.has(normText(text))) continue;
-    seen.add(normText(text));
-    const t = parseTimestamp(x?.time);
-    fresh.push({
-      id: newActionId(),
-      text,
-      owner: String(x?.owner || "").trim(),
-      due: normalizeDue(x?.due),
-      dueText: String(x?.due_text || "").trim() || undefined,
-      status: "pending",
-      source: t === null ? null : { t, quote: String(x?.quote || "").trim().slice(0, 80) },
-      confidence: typeof x?.confidence === "number" ? Math.max(0, Math.min(1, x.confidence)) : undefined,
-      createdAt: now,
-      updatedAt: now,
-    });
-  }
-  const items = existing.concat(fresh);
+  const known = existing.filter((a) => a.status !== "pending").map((a) => a.text);
+  const prompt = core.buildExtractPrompt({ createdAt: meta.createdAt, names, glossary: glossaryNote(await loadGlossary()), transcript, known });
+  const arr = extractJsonArray(await summarize(cfg, core.ACTIONS_SYSTEM, prompt, () => {}));
+  const { fresh, items } = core.mergeExtracted(existing, arr, new Date().toISOString());
   await writeActions(id, items);
   console.log(`行动项提取:${id} 新增 ${fresh.length} 条(模型返回 ${arr.length} 条)`);
   return { added: fresh.length, items };
-}
-
-function patchAction(a: ActionItem, body: any): ActionItem {
-  const next = { ...a };
-  if (typeof body.text === "string" && body.text.trim()) next.text = body.text.trim();
-  if (typeof body.owner === "string") next.owner = body.owner.trim();
-  if ("due" in body) next.due = body.due ? normalizeDue(body.due) : null;
-  if (typeof body.note === "string") next.note = body.note.trim() || undefined;
-  if (typeof body.status === "string" && ACTION_STATUSES.includes(body.status as ActionStatus)) {
-    next.status = body.status as ActionStatus;
-    if (next.status === "done" && a.status !== "done") next.doneAt = new Date().toISOString();
-    if (next.status !== "done") next.doneAt = undefined;
-  }
-  next.updatedAt = new Date().toISOString();
-  return next;
 }
 
 // 所有会议的行动项(全局看板用),附上会议标题
@@ -1460,44 +1358,7 @@ async function listAllActions() {
 // ---------- 会前汇报 ----------
 // 开会前看一眼:上次会议定的事做完几件、谁逾期了。给网页卡片、菜单栏「要录吗」面板和复制到群里用。
 async function briefing() {
-  const meetings = await listMeetings();
-  const all = await listAllActions();
-  const t = localDate();
-  // 「上次会议」= 最近一场有已确认任务的会议;刚转写完、任务还全是待确认的那场单独提一句
-  const withActions = meetings.filter((m) => all.some((a) => a.meetingId === m.id && a.status !== "pending"));
-  const last = withActions[0] || null;
-  const lastItems = last ? all.filter((a) => a.meetingId === last.id && a.status !== "pending") : [];
-  const newest = meetings.find((m) => all.some((a) => a.meetingId === m.id));
-  const pendingNewest = newest && newest.id !== last?.id ? all.filter((a) => a.meetingId === newest.id && a.status === "pending").length : 0;
-  const count = (list: typeof all, st: ActionStatus) => list.filter((a) => a.status === st).length;
-  const live = all.filter((a) => a.status === "todo" || a.status === "doing");
-  const overdue = live.filter((a) => a.due && a.due < t);
-  const dueSoon = live.filter((a) => a.due && a.due >= t && a.due <= shiftDate(t, 1));
-  const fmtD = (ymd: string) => `${Number(ymd.slice(5, 7))}/${Number(ymd.slice(8, 10))}`;
-  const lastDate = last ? fmtD(localDate(new Date(last.createdAt))) : "";
-  const lastOpen = lastItems.filter((a) => a.status === "todo" || a.status === "doing").length;
-  const line = last
-    ? `上次会议(${lastDate})定了 ${lastItems.filter((a) => a.status !== "pending").length} 件事:完成 ${count(lastItems, "done")},未完成 ${lastOpen}${overdue.length ? `,逾期 ${overdue.length}` : ""}`
-    : "还没有记录过行动项";
-  const pendingNote = pendingNewest ? `;最近一场「${newest!.title}」还有 ${pendingNewest} 条待确认` : "";
-  const item = (a: (typeof all)[number]) => `- ${a.owner || "待定"}:${a.text}${a.due ? `(${fmtD(a.due)})` : ""}`;
-  const lines = [`📊 会前汇报(${fmtD(t)})`, ""];
-  if (pendingNewest) lines.push(`最近一场「${newest!.title}」刚转写完,有 ${pendingNewest} 条行动项等你确认。`, "");
-  if (last) {
-    lines.push(`上次会议「${last.title}」(${lastDate})定了 ${lastItems.filter((a) => a.status !== "pending").length} 件事:完成 ${count(lastItems, "done")} · 进行中 ${count(lastItems, "doing")} · 待办 ${count(lastItems, "todo")}${count(lastItems, "dropped") ? ` · 搁置 ${count(lastItems, "dropped")}` : ""}`, "");
-  }
-  if (overdue.length) lines.push("⚠️ 已逾期", ...overdue.map(item), "");
-  if (dueSoon.length) lines.push("🔜 今明两天到期", ...dueSoon.map(item), "");
-  const rest = live.filter((a) => !overdue.includes(a) && !dueSoon.includes(a));
-  if (rest.length) lines.push("📝 其他未完成", ...rest.slice(0, 15).map(item), rest.length > 15 ? `…还有 ${rest.length - 15} 条,看任务看板` : "", "");
-  if (!live.length) lines.push("所有任务都完成了 🎉", "");
-  lines.push("开会先对一遍这些,再聊新的。");
-  return {
-    lastMeeting: last ? { id: last.id, title: last.title, createdAt: last.createdAt } : null,
-    counts: { last: lastItems.filter((a) => a.status !== "pending").length, lastDone: count(lastItems, "done"), lastOpen, open: live.length, overdue: overdue.length, dueSoon: dueSoon.length },
-    line: line + pendingNote,
-    text: lines.join("\n").replace(/\n{3,}/g, "\n\n"),
-  };
+  return core.briefingFrom(await listMeetings(), await listAllActions(), localDate());
 }
 
 // ---------- 旧任务完成识别 ----------
@@ -1516,45 +1377,15 @@ async function readReviews(id: string): Promise<Review[]> {
 }
 async function writeReviews(id: string, list: Review[]) { await writeFile(reviewsPath(id), JSON.stringify(list, null, 2)); }
 
-const REVIEW_SYSTEM = `你是会议任务跟踪员。下面有一份「之前会议定下、还没完成的任务清单」和一份「新会议的逐字稿」。
-找出逐字稿里提到了清单中哪些任务的进展,输出 JSON 数组,不要输出其他文字。只输出确实被提到的任务,没提到的不要出现。
-
-每个元素:
-- "id": 清单里的任务 id,照抄
-- "status": "done"(说做完了 / 已经发了 / 搞定了)、"doing"(说在做、有进展但没完)、"dropped"(说不做了 / 取消 / 不用了)
-- "time": 逐字稿里提到的位置,照抄行首的 mm:ss
-- "quote": 原话,30 字以内,照抄
-- "confidence": 0 到 1
-
-规则:只依据原话,不要推测;同一任务只出一条;严格输出 JSON,不要 Markdown 围栏。`;
-
 async function reviewActions(id: string): Promise<{ added: number; reviews: Review[] }> {
   const cfg = await loadConfig();
   const transcript = (await readTextIfExists(path.join(meetingDir(id), "transcript.txt"))).trim();
   if (transcript.length < 30) throw new Error("逐字稿内容太少");
-  const open = (await listAllActions())
-    .filter((a) => a.meetingId !== id && (a.status === "todo" || a.status === "doing"))
-    .sort((a, b) => b.meetingAt.localeCompare(a.meetingAt))
-    .slice(0, 40);
+  const open = core.pickOpenForReview(await listAllActions(), id);
   if (!open.length) return { added: 0, reviews: await readReviews(id) };
-  const fmtD = (iso: string) => { const d = new Date(iso); return `${d.getMonth() + 1}/${d.getDate()}`; };
-  const listText = open.map((a) => `- id=${a.id} | ${a.owner || "待定"} | ${a.text}${a.due ? ` | 截止 ${a.due}` : ""} | 来自 ${fmtD(a.meetingAt)}「${a.meetingTitle}」`).join("\n");
-  const prompt = `${glossaryNote(await loadGlossary())}\n\n<open_tasks>\n${listText}\n</open_tasks>\n\n<transcript>\n${transcript.slice(0, 60000)}\n</transcript>`;
-  const raw = await summarize(cfg, REVIEW_SYSTEM, prompt, () => {});
-  const arr = extractJsonArray(raw);
-  const existing = await readReviews(id);
-  const seen = new Set(existing.map((r) => r.actionId));
-  const byId = new Map(open.map((a) => [a.id, a]));
-  const now = new Date().toISOString();
-  const fresh: Review[] = [];
-  for (const x of arr) {
-    const a = byId.get(String(x?.id || ""));
-    const st = String(x?.status || "");
-    if (!a || seen.has(a.id) || !["done", "doing", "dropped"].includes(st)) continue;
-    seen.add(a.id);
-    fresh.push({ actionId: a.id, meetingId: a.meetingId, text: a.text, owner: a.owner, suggested: st as Review["suggested"], t: parseTimestamp(x?.time), quote: String(x?.quote || "").trim().slice(0, 80), confidence: typeof x?.confidence === "number" ? x.confidence : undefined, createdAt: now });
-  }
-  const reviews = existing.concat(fresh);
+  const prompt = core.buildReviewPrompt({ open, glossary: glossaryNote(await loadGlossary()), transcript });
+  const arr = extractJsonArray(await summarize(cfg, core.REVIEW_SYSTEM, prompt, () => {}));
+  const { fresh, reviews } = core.mergeReviews(await readReviews(id), arr, open, new Date().toISOString());
   await writeReviews(id, reviews);
   console.log(`旧任务对照:${id} 对照 ${open.length} 条,提到 ${fresh.length} 条`);
   return { added: fresh.length, reviews };
@@ -1568,7 +1399,7 @@ async function resolveReview(id: string, actionId: string, accept: boolean, newM
     const list = await readActions(r.meetingId);
     const i = list.findIndex((a) => a.id === actionId);
     if (i >= 0) {
-      list[i] = patchAction(list[i], { status: r.suggested, note: `在「${newMeetingTitle}」里提到:${r.quote}` });
+      list[i] = patchAction(list[i], { status: r.suggested, note: core.reviewNote(newMeetingTitle, r.quote) });
       await writeActions(r.meetingId, list);
     }
   }
@@ -1580,19 +1411,9 @@ async function resolveReview(id: string, actionId: string, accept: boolean, newM
 // ---------- 到期提醒 ----------
 // 每天到点扫一遍所有未完成任务:逾期、今天到期、明天到期,合成一条 macOS 通知。
 const REMIND_STATE_PATH = path.join(ROOT, "reminders.json");
-const localDate = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-const shiftDate = (ymd: string, days: number) => { const [y, m, d] = ymd.split("-").map(Number); return localDate(new Date(y, m - 1, d + days)); };
 
 async function dueDigest() {
-  const t = localDate();
-  const tomorrow = shiftDate(t, 1);
-  const live = (await listAllActions()).filter((a) => (a.status === "todo" || a.status === "doing") && a.due);
-  return {
-    date: t,
-    overdue: live.filter((a) => a.due! < t).sort((a, b) => a.due!.localeCompare(b.due!)),
-    today: live.filter((a) => a.due === t),
-    tomorrow: live.filter((a) => a.due === tomorrow),
-  };
+  return core.dueDigestFrom(await listAllActions(), localDate());
 }
 
 async function notifyMac(title: string, message: string, subtitle = "") {
@@ -1673,16 +1494,8 @@ async function askLibrary(question: string, history: AskTurn[], onEvent: (type: 
 
   // 任务清单:所有会议的行动项,标上定下它的那场会议编号和时间戳,问「谁负责 / 做没做 / 哪次会定的」时直接可答
   const refById = new Map(all.map((m) => [m.meta.id, m.ref]));
-  const STATUS_CN: Record<ActionStatus, string> = { pending: "待确认(AI 提取,还没人确认)", todo: "待办", doing: "进行中", done: "已完成", dropped: "搁置" };
-  const taskLines = (await listAllActions())
-    .filter((a) => refById.has(a.meetingId))
-    .map((a) => {
-      const ref = refById.get(a.meetingId)!;
-      const src = a.source ? `[${ref} ${fmtTime(a.source.t)}]` : `[${ref}]`;
-      const extra = [a.due ? `截止 ${a.due}` : "", a.doneAt ? `完成于 ${a.doneAt.slice(0, 10)}` : "", a.note ? `备注:${a.note}` : "", a.source?.quote ? `原话「${a.source.quote}」` : ""].filter(Boolean).join(" | ");
-      return `- ${src} ${a.owner || "待定"}:${a.text} | 状态:${STATUS_CN[a.status]}${extra ? " | " + extra : ""}`;
-    });
-  const tasksBlock = taskLines.length ? `<tasks>\n今天是 ${localDate()}。任务清单(方括号里是定下它的会议编号和时间戳):\n${taskLines.join("\n")}\n</tasks>` : "";
+  const tasks = core.formatTasksBlock(await listAllActions(), refById, localDate());
+  const tasksBlock = tasks.block;
 
   let chosen = all;
   const total = all.reduce((n, m) => n + m.transcript.length, 0);
@@ -1705,8 +1518,7 @@ async function askLibrary(question: string, history: AskTurn[], onEvent: (type: 
   }
 
   // 任务清单里引用到的会议也要进出处列表,点 [[M2 13:05]] 才跳得过去
-  const cited = new Set(chosen.map((m) => m.ref));
-  for (const line of taskLines) { const r = line.match(/^- \[(M\d+)/)?.[1]; if (r) cited.add(r); }
+  const cited = new Set([...chosen.map((m) => m.ref), ...tasks.cited]);
   onEvent("sources", { sources: all.filter((m) => cited.has(m.ref)).map((m) => ({ ref: m.ref, id: m.meta.id, title: m.meta.title, createdAt: m.meta.createdAt })) });
   const docs = chosen.map((m) => {
     const t = m.transcript.length > ASK_PER_MEETING_LIMIT ? m.transcript.slice(0, ASK_PER_MEETING_LIMIT) + "\n(后面内容过长已省略)" : m.transcript;

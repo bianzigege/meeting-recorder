@@ -7,3 +7,9 @@ bin/
 glossary.json
 templates.json
 reminders.json
+
+# 网页演示版
+web/dist/
+web/.dev.vars
+web/.wrangler/
+web/lib/seed.js
