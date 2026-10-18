@@ -30,14 +30,16 @@ for (const m of md.matchAll(/^\| (\d+) \| (\d+):(\d{2})–(\d+):(\d{2}) \|/gm)) 
 type Piece = { file: string; from?: number; to?: number; fit?: boolean };
 const R = (n: string) => path.join(SRC, "录屏", n + ".mp4");
 const C = (n: string) => path.join(SRC, "字卡", n + ".mp4");
-const P = (n: number) => path.join(TMP, `占位-镜${n}.mp4`);
+// 你录的镜头放在 <视频素材>/你录的/镜05.mov(.mp4) 这样的名字,有就用,没有就用占位卡
+const MINE = (n: number) => ["mov", "mp4", "m4v"].map((e) => path.join(SRC, "你录的", `镜${String(n).padStart(2, "0")}.${e}`)).find((f) => existsSync(f));
+const P = (n: number) => MINE(n) || path.join(TMP, `占位-镜${n}.mp4`);
 const plan: Record<number, Piece[]> = {
   1: [{ file: R("镜01-会前汇报逾期7") }],
   2: [{ file: R("镜02-九条候选标记完成"), fit: true }],
   3: [{ file: C("镜03-问题") }],
   4: [{ file: C("镜04-片名") }, { file: R("镜04-网页版全景"), to: 10 }],
   5: [{ file: P(5) }],
-  6: [{ file: P(6), to: 4 }, { file: R("镜06-逐字稿"), to: 6 }],
+  6: [{ file: P(6), fit: true, to: MINE(6) ? undefined : 4 }, { file: R("镜06-逐字稿"), to: 6 }],
   7: [{ file: R("镜07-待确认任务"), to: 12 }],
   8: [{ file: R("镜08-点原话回放") }],
   9: [{ file: R("镜09-改日期并确认") }],
@@ -62,6 +64,7 @@ await launchChrome();
 const page = await Page.open(9223);
 await page.send("Emulation.setDeviceMetricsOverride", { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false });
 for (const [n, text] of Object.entries(placeholders)) {
+  if (MINE(+n)) continue;
   const html = `<!doctype html><meta charset="utf-8"><style>body{margin:0;width:1920px;height:1080px;background:#e5e7eb;font-family:"PingFang SC",sans-serif;display:flex;align-items:center;justify-content:center}
   .b{width:1500px;height:760px;border:6px dashed #9ca3af;border-radius:40px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:36px;color:#374151}
   .t{font-size:44px;color:#6b7280;letter-spacing:.1em}.d{font-size:64px;font-weight:600;line-height:1.5}</style>
@@ -103,7 +106,7 @@ for (const n of Object.keys(plan).map(Number).sort((a, b) => a - b)) {
     const last = i === plan[n].length - 1;
     const target = last ? len - used : d;
     const f = path.join(TMP, `seg${n}-${i}.mp4`);
-    let vf = "fps=30,scale=1920:1080,setsar=1";
+    let vf = "fps=30,scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0xf5f6f8,setsar=1";
     if (last && d > target && pc.fit && d / target <= 1.35) vf = `setpts=PTS*${(target / d).toFixed(4)},` + vf; // 快放到合适长度
     if (last && d < target) vf += `,tpad=stop_mode=clone:stop_duration=${(target - d).toFixed(3)}`; // 不够就定格
     run(["ffmpeg", "-y", "-loglevel", "error", "-ss", String(from), "-t", String(d), "-i", src, "-an", "-vf", vf, "-t", target.toFixed(3), "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", f]);
@@ -138,7 +141,7 @@ const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart
 const srtT = (s: number) => { const ms = Math.round(s * 1000); const h = Math.floor(ms / 3600000), m = Math.floor(ms / 60000) % 60, sec = Math.floor(ms / 1000) % 60; return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")},${String(ms % 1000).padStart(3, "0")}`; };
 const srt = timeline.filter((s) => lines[s.n]).map((s, i) => `${i + 1}\n${srtT(s.start + LEAD)} --> ${srtT(s.start + LEAD + s.vo)}\n${lines[s.n]}\n`).join("\n");
 writeFileSync(path.join(OUT, "粗剪v1-旁白字幕.srt"), srt);
-const rows = timeline.map((s) => `| ${s.n} | ${fmt(s.start)} | ${s.len.toFixed(1)} 秒 | ${s.slot} 秒 | ${s.vo.toFixed(1)} 秒 | ${s.over > 0.05 ? `**超 ${s.over.toFixed(1)} 秒**` : "—"} | ${plan[s.n].some((p) => p.file.includes("占位")) ? "占位,待你录" : ""} |`);
+const rows = timeline.map((s) => `| ${s.n} | ${fmt(s.start)} | ${s.len.toFixed(1)} 秒 | ${s.slot} 秒 | ${s.vo.toFixed(1)} 秒 | ${s.over > 0.05 ? `**超 ${s.over.toFixed(1)} 秒**` : "—"} | ${plan[s.n].some((p) => p.file.includes("占位")) ? "占位,待你录" : plan[s.n].some((p) => p.file.includes("你录的")) ? "用了你录的" : ""} |`);
 writeFileSync(path.join(OUT, "粗剪v1-时间轴.md"), [
   "# 粗剪 v1 时间轴(TTS 旁白占位)", "",
   `- 成片总长 **${fmt(total)}**(分镜计划 2:56)。旁白声音:${VOICE},语速 ${RATE},只是占位。`,

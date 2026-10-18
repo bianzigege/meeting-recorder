@@ -1314,6 +1314,8 @@ type ActionItem = {
 };
 
 const { normalizeDue, parseTimestamp, extractJsonArray, newActionId, localDate, shiftDate } = core;
+// 录演示视频时可以用 DEMO_TODAY 固定「今天」(和网页演示版一样是 2026-10-27);平时就是真实日期
+const todayStr = () => process.env.DEMO_TODAY || localDate();
 
 function actionsPath(id: string) { return path.join(meetingDir(id), "actions.json"); }
 
@@ -1358,7 +1360,7 @@ async function listAllActions() {
 // ---------- 会前汇报 ----------
 // 开会前看一眼:上次会议定的事做完几件、谁逾期了。给网页卡片、菜单栏「要录吗」面板和复制到群里用。
 async function briefing() {
-  return core.briefingFrom(await listMeetings(), await listAllActions(), localDate());
+  return core.briefingFrom(await listMeetings(), await listAllActions(), todayStr());
 }
 
 // ---------- 旧任务完成识别 ----------
@@ -1410,10 +1412,11 @@ async function resolveReview(id: string, actionId: string, accept: boolean, newM
 
 // ---------- 到期提醒 ----------
 // 每天到点扫一遍所有未完成任务:逾期、今天到期、明天到期,合成一条 macOS 通知。
-const REMIND_STATE_PATH = path.join(ROOT, "reminders.json");
+// 指到别的会议库(示例数据)时,提醒记录跟着那个库走,不碰真实库的记录
+const REMIND_STATE_PATH = process.env.MEETINGS_DIR ? path.join(MEETINGS_DIR, ".reminders.json") : path.join(ROOT, "reminders.json");
 
 async function dueDigest() {
-  return core.dueDigestFrom(await listAllActions(), localDate());
+  return core.dueDigestFrom(await listAllActions(), todayStr());
 }
 
 async function notifyMac(title: string, message: string, subtitle = "") {
@@ -1462,7 +1465,7 @@ async function reminderTick() {
   if (new Date().getHours() < hour) return;
   let state: { lastDailyRun?: string } = {};
   try { state = JSON.parse(await readFile(REMIND_STATE_PATH, "utf8")); } catch {}
-  const today = localDate();
+  const today = todayStr();
   if (state.lastDailyRun === today) return;
   const r = await sendDueReminder();
   await writeFile(REMIND_STATE_PATH, JSON.stringify({ lastDailyRun: today, lastResult: { sent: r.sent, overdue: r.overdue.length, today: r.today.length, tomorrow: r.tomorrow.length } }));
@@ -1494,7 +1497,7 @@ async function askLibrary(question: string, history: AskTurn[], onEvent: (type: 
 
   // 任务清单:所有会议的行动项,标上定下它的那场会议编号和时间戳,问「谁负责 / 做没做 / 哪次会定的」时直接可答
   const refById = new Map(all.map((m) => [m.meta.id, m.ref]));
-  const tasks = core.formatTasksBlock(await listAllActions(), refById, localDate());
+  const tasks = core.formatTasksBlock(await listAllActions(), refById, todayStr());
   const tasksBlock = tasks.block;
 
   let chosen = all;

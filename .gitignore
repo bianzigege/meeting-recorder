@@ -13,3 +13,6 @@ web/dist/
 web/.dev.vars
 web/.wrangler/
 web/lib/seed.js
+
+# 录演示视频时 Mac 版用的示例会议库副本
+.demo-meetings/
