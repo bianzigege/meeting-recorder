@@ -14,7 +14,7 @@ const TMP = "/tmp/sanhui-roughcut";
 mkdirSync(OUT, { recursive: true }); mkdirSync(TMP, { recursive: true }); mkdirSync(path.join(OUT, "旁白-TTS"), { recursive: true });
 const EDGE = `${process.env.HOME}/Desktop/泰语学习/bianzi-thai/.venv/bin/edge-tts`;
 const VOICE = "zh-CN-YunyangNeural", RATE = "+10%";
-const VER = process.env.VER || "v3"; // 粗剪版本号,写进输出文件名
+const VER = process.env.VER || "v4"; // 粗剪版本号,写进输出文件名
 const LEAD = 0.3, TAIL = 0.45; // 旁白在镜头开始后 0.3 秒进;念完至少留 0.45 秒
 
 const run = (args: string[]) => { const r = Bun.spawnSync(args); if (r.exitCode) throw new Error(args.slice(0, 3).join(" ") + " 失败:" + r.stderr.toString().slice(-500)); return r.stdout.toString(); };
@@ -74,7 +74,7 @@ const plan: Record<number, Piece[]> = {
   13: [{ file: R("镜13-看板逾期剩1") }],
   14: [{ file: R("镜14-15-问资料库MOI智能体"), to: 15.3 }],
   15: [{ file: R("镜14-15-问资料库MOI智能体"), from: 15.3 }],
-  16: [{ file: P(16) }],
+  16: [{ file: MINE(16) || (existsSync(R("镜16-MOI控制台")) ? R("镜16-MOI控制台") : P(16)) }], // shot16.ts 用内置浏览器截的控制台合成
   17: [{ file: C("镜17-网址") }],
 };
 const placeholders: Record<number, string> = {

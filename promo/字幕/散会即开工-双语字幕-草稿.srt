@@ -1,0 +1,269 @@
+1
+00:00:00,300 --> 00:00:03,760
+上次会议定了八件事，七件显示逾期
+Last meeting set 8 tasks. 7 show as overdue.
+
+2
+00:00:06,300 --> 00:00:08,224
+其实大部分早就做完了
+Most were actually done long ago —
+
+3
+00:00:08,264 --> 00:00:09,860
+只是没人回来更新
+nobody came back to update them.
+
+4
+00:00:12,300 --> 00:00:14,460
+会上定的事，散会就忘
+Decisions are forgotten the moment the meeting ends.
+
+5
+00:00:14,500 --> 00:00:17,060
+纪要没人写，写了也没人看
+No one writes the minutes, and no one reads them.
+
+6
+00:00:17,100 --> 00:00:18,660
+谁负责、做完没
+Who owns it? Is it done?
+
+7
+00:00:18,700 --> 00:00:20,660
+最后都得去翻群聊
+You end up digging through group chats.
+
+8
+00:00:22,300 --> 00:00:23,877
+这是散会即开工
+This is Sanhui (Meeting → Action).
+
+9
+00:00:23,917 --> 00:00:26,032
+AI 写纪要，现在谁都会
+Any AI can write minutes now.
+
+10
+00:00:26,072 --> 00:00:27,649
+它做的是下一步
+Sanhui does the next step:
+
+11
+00:00:27,689 --> 00:00:29,804
+把会上定的事变成任务
+it turns decisions into tasks
+
+12
+00:00:29,844 --> 00:00:31,960
+再跨会议一直跟到做完
+and follows them across meetings until they're done.
+
+13
+00:00:34,300 --> 00:00:35,691
+会议软件一开麦
+When your meeting app turns on the mic,
+
+14
+00:00:35,731 --> 00:00:37,757
+右上角就会问你要不要录
+a prompt in the corner asks if you want to record
+
+15
+00:00:37,797 --> 00:00:40,460
+顺带告诉你，上次定的事做完了几件
+and tells you how many tasks from last time are done.
+
+16
+00:00:46,300 --> 00:00:48,655
+录音分成你和对方两条声音
+Audio is split into two tracks: you and the others.
+
+17
+00:00:48,695 --> 00:00:51,392
+在你自己的电脑上离线转成文字
+It's transcribed offline on your own computer.
+
+18
+00:00:51,432 --> 00:00:52,760
+录音不出电脑
+The audio never leaves your Mac.
+
+19
+00:00:56,300 --> 00:00:58,540
+散会后，AI 把任务挑出来
+After the meeting, AI picks out the tasks:
+
+20
+00:00:58,580 --> 00:01:00,645
+谁做、做什么、什么时候交
+who, what, and by when,
+
+21
+00:01:00,685 --> 00:01:02,049
+每条带着原话
+each with the original quote.
+
+22
+00:01:02,089 --> 00:01:05,030
+我拿自己一场二十二分钟的会试过
+I tried it on a 22-minute meeting of my own:
+
+23
+00:01:05,070 --> 00:01:06,960
+四十六秒，提出七件事
+46 seconds, 7 tasks.
+
+24
+00:01:08,300 --> 00:01:11,087
+点原话，就从录音里那一句开始播
+Click the original quote to play from that exact line.
+
+25
+00:01:11,127 --> 00:01:13,560
+当时谁怎么说的，一听就清楚
+You hear exactly who said what.
+
+26
+00:01:18,300 --> 00:01:20,813
+AI 提出来的，先放在待确认
+AI suggestions go to Pending review first.
+
+27
+00:01:20,853 --> 00:01:22,636
+负责人、日期都能改
+You can change the owner and the date.
+
+28
+00:01:22,676 --> 00:01:24,460
+你点了确认才算数
+Nothing counts until you confirm it.
+
+29
+00:01:28,300 --> 00:01:30,360
+确认完，按负责人分好组
+Once confirmed, tasks are grouped by owner
+
+30
+00:01:30,400 --> 00:01:32,985
+生成一条认领消息，复制到群里
+into a claim message you paste into the group chat,
+
+31
+00:01:33,025 --> 00:01:34,560
+各人认领各人的
+so everyone claims their own.
+
+32
+00:01:40,300 --> 00:01:43,210
+之后每天早上九点，电脑会弹通知
+Every morning at 9, your Mac sends a notification
+
+33
+00:01:43,250 --> 00:01:46,160
+提醒哪些已经逾期、哪些今天到期
+about what's overdue and what's due today.
+
+34
+00:01:50,300 --> 00:01:52,555
+到了下次开会，转写一完成
+At the next meeting, once transcription finishes,
+
+35
+00:01:52,595 --> 00:01:54,674
+它会把之前没做完的事
+it checks the earlier open tasks
+
+36
+00:01:54,714 --> 00:01:56,263
+和新录音对一遍
+against the new recording.
+
+37
+00:01:56,303 --> 00:01:59,265
+比如小林说样品到了、照片发群里了
+Say Xiaolin mentions the samples arrived and the photos are posted —
+
+38
+00:01:59,305 --> 00:02:01,560
+它就提示把这件标成完成
+it suggests marking that task done.
+
+39
+00:02:05,300 --> 00:02:08,312
+对完一遍，逾期从七件剩下一件
+After one pass, overdue drops from 7 to 1.
+
+40
+00:02:08,352 --> 00:02:11,160
+剩下的这件，会上确实没人提
+And the one left really wasn't mentioned.
+
+41
+00:02:15,300 --> 00:02:17,350
+想追问，就打开问资料库
+Want to dig deeper? Open Ask the library.
+
+42
+00:02:17,390 --> 00:02:19,962
+我问：小林手上还有什么没做完？
+I ask: what does Xiaolin still have open?
+
+43
+00:02:20,002 --> 00:02:22,574
+问题会交给 MOI 上的智能体
+The question goes to an agent on MOI.
+
+44
+00:02:22,614 --> 00:02:25,360
+它先去知识库里检索，再整理回答
+It searches the knowledge base, then writes the answer.
+
+45
+00:02:30,300 --> 00:02:32,114
+回答里每一句都标了
+Every sentence in the answer is tagged
+
+46
+00:02:32,154 --> 00:02:33,800
+是哪场会、第几分钟
+with the meeting and the minute.
+
+47
+00:02:33,840 --> 00:02:36,160
+点一下，就回到录音里那一句
+Click it to jump back to that line in the recording.
+
+48
+00:02:40,300 --> 00:02:41,910
+这背后用的是 MOI
+Under the hood, it's MOI:
+
+49
+00:02:41,950 --> 00:02:43,560
+三场会议存进知识库
+the three meetings live in a knowledge base,
+
+50
+00:02:43,600 --> 00:02:45,510
+智能体查着知识库来回答
+the agent answers by searching it,
+
+51
+00:02:45,550 --> 00:02:46,860
+提任务和写纪要
+and task extraction and minutes
+
+52
+00:02:46,900 --> 00:02:48,960
+用的是 Genesis 模型
+run on Genesis models.
+
+53
+00:02:50,300 --> 00:02:52,999
+散会即开工，网页版打开就能试
+Sanhui: open the web version and try it now.
+
+54
+00:02:53,039 --> 00:02:54,460
+地址在屏幕上
+The link is on screen.
