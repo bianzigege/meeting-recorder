@@ -1,5 +1,13 @@
 # 会议录音纪要 Meeting Recorder
 
+> **MatrixNEXT 2026 参赛作品「散会即开工」**（创意赛道 · 会议变行动）
+>
+> 在这个会议录音工具上，把会议变成会持续跟进的任务：散会后自动提出任务，确认后按负责人生成认领消息，每天定时提醒，下次开会自动对照完成情况。AI 部分接入 MOI 的 Genesis 模型、知识库和智能体。
+>
+> - 网页版，打开即用：<https://sanhui-kaigong.pages.dev>
+> - 演示视频，2 分 56 秒：<https://sanhui-kaigong.pages.dev/video/>
+> - 作品说明文档：[docs/README.md](docs/README.md)
+
 在 Mac 上录下会议的画面和声音(三种模式可选,麦克风和线上会议对方的声音分两轨保存),用 macOS 自带的语音识别离线转写成区分「我 / 嘉宾」的逐字稿,再用你自己的 Claude 账号生成结构化会议纪要。
 不需要任何 API Key,录音、转写和纪要全部保存在本机。
 
