@@ -1559,7 +1559,7 @@ async function loadRemindPreview() {
   const el = $("#remindPreview");
   try {
     const d = await api("/api/reminders");
-    el.textContent = `现在的情况:逾期 ${d.overdue.length} 条 · 今天到期 ${d.today.length} 条 · 明天到期 ${d.tomorrow.length} 条。`;
+    el.textContent = `现在的情况：逾期 ${d.overdue.length} 条 · 今天到期 ${d.today.length} 条 · 明天到期 ${d.tomorrow.length} 条。`;
   } catch { el.textContent = ""; }
 }
 $("#btnRemindTest").onclick = async () => {
@@ -1567,7 +1567,7 @@ $("#btnRemindTest").onclick = async () => {
   btn.disabled = true;
   try {
     const r = await api("/api/reminders", { method: "POST" });
-    toast(r.sent ? "已发出一条系统通知,看右上角" : "没发出去,看看系统设置里有没有允许通知");
+    toast(r.sent ? "已发出一条系统通知，看右上角" : "没发出去，看看系统设置里有没有允许通知");
   } catch (e) { uiAlert(e.message, "提醒失败"); }
   finally { btn.disabled = false; }
 };

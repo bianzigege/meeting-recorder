@@ -7,6 +7,8 @@ const OUT = process.argv[2] || "out";
 const only = process.argv.slice(3);
 const M3 = "20261026-100000";
 const CARD = (n: string) => path.join(OUT, "字卡", n);
+// Mac 版本机页面。录这类镜头前先 promo/demo-mode.sh on 切到示例会议库,录完 off 切回来
+const MAC = "http://localhost:3456";
 
 // ---------- 准备状态(走网页版自己的接口) ----------
 const resolveReviews = (r: Rec, accept: boolean) => r.eval(`(async () => {
@@ -122,6 +124,31 @@ const shots: Record<string, () => Promise<void>> = {
     await r.click("#btnCopyClaim", 0, { sec: 0.8, pause: 0.5, after: 0.3 });
     await r.real(1.5, { fps: 10 });
     await r.hold(Math.max(1, 12 - r.now()));
+    await r.save();
+  },
+  // 镜 11:Mac 版「设置 → 任务提醒」:每天 9 点提醒,现在逾期 7 条
+  // 录屏时 macOS 会把通知横幅藏起来,录不到,所以这一镜拍设置里的提醒开关、时间和当前情况
+  async "11"() {
+    const r = new Rec("镜11-任务提醒", OUT);
+    await r.open(MAC, async (r) => {
+      await r.p.send("Page.reload", { ignoreCache: true });
+      await sleep(2500);
+      await r.eval(`document.querySelector("#btnSettings").click()`);
+      await sleep(1500);
+      await r.eval(`document.querySelector("[name=remindEnabled]").closest("fieldset").scrollIntoView({ block: "center" })`);
+      await sleep(500);
+    });
+    const prev = await r.eval(`document.querySelector("#remindPreview").textContent`);
+    if (!/逾期 7 条/.test(prev)) throw new Error("提醒预览不对(是不是没切到示例会议库?):" + prev);
+    const box = await r.eval(`(() => { const b = document.querySelector("[name=remindEnabled]").closest("fieldset").getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height }; })()`);
+    await r.hold(1.0);
+    await r.zoomTo(r.focus(box, 700), 1.2);
+    const lab = await r.rect("[name=remindEnabled] + span");
+    await r.move(lab.x + 150, lab.y + lab.h + 3, 0.8, 1.3); // 停在文字下方,不挡字
+    await r.moveTo("[name=remindHour]", 0, 0.7, 1.3);
+    const pv = await r.rect("#remindPreview");
+    await r.move(pv.x + 118, pv.y + pv.h + 3, 0.7, 1.5); // 停在「逾期 7 条」正下方,不挡字
+    await r.hold(Math.max(1, 10 - r.now()));
     await r.save();
   },
   // 镜 12:下次开会对出旧任务进展:点原话听一句 → 标记完成

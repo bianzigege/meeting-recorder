@@ -14,6 +14,7 @@ const TMP = "/tmp/sanhui-roughcut";
 mkdirSync(OUT, { recursive: true }); mkdirSync(TMP, { recursive: true }); mkdirSync(path.join(OUT, "旁白-TTS"), { recursive: true });
 const EDGE = `${process.env.HOME}/Desktop/泰语学习/bianzi-thai/.venv/bin/edge-tts`;
 const VOICE = "zh-CN-YunyangNeural", RATE = "+10%";
+const VER = process.env.VER || "v2"; // 粗剪版本号,写进输出文件名
 const LEAD = 0.3, TAIL = 0.45; // 旁白在镜头开始后 0.3 秒进;念完至少留 0.45 秒
 
 const run = (args: string[]) => { const r = Bun.spawnSync(args); if (r.exitCode) throw new Error(args.slice(0, 3).join(" ") + " 失败:" + r.stderr.toString().slice(-500)); return r.stdout.toString(); };
@@ -30,8 +31,14 @@ for (const m of md.matchAll(/^\| (\d+) \| (\d+):(\d{2})–(\d+):(\d{2}) \|/gm)) 
 type Piece = { file: string; from?: number; to?: number; fit?: boolean };
 const R = (n: string) => path.join(SRC, "录屏", n + ".mp4");
 const C = (n: string) => path.join(SRC, "字卡", n + ".mp4");
-// 你录的镜头放在 <视频素材>/你录的/镜05.mov(.mp4) 这样的名字,有就用,没有就用占位卡
-const MINE = (n: number) => ["mov", "mp4", "m4v"].map((e) => path.join(SRC, "你录的", `镜${String(n).padStart(2, "0")}.${e}`)).find((f) => existsSync(f));
+// 你录的镜头放在 <视频素材>/你录的/镜05.mov(.mp4) 这样的名字,有就用,没有就用占位卡;截图(png/jpg)也行,会做成 12 秒定格
+const MINE = (n: number) => {
+  const f = ["mov", "mp4", "m4v", "png", "jpg"].map((e) => path.join(SRC, "你录的", `镜${String(n).padStart(2, "0")}.${e}`)).find((f) => existsSync(f));
+  if (!f || !/\.(png|jpg)$/.test(f)) return f;
+  const v = path.join(TMP, `你录的-镜${n}.mp4`);
+  run(["ffmpeg", "-y", "-loglevel", "error", "-loop", "1", "-t", "12", "-i", f, "-vf", "fps=30,scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0xf5f6f8,format=yuv420p", "-c:v", "libx264", "-crf", "18", v]);
+  return v;
+};
 const P = (n: number) => MINE(n) || path.join(TMP, `占位-镜${n}.mp4`);
 const plan: Record<number, Piece[]> = {
   1: [{ file: R("镜01-会前汇报逾期7") }],
@@ -44,7 +51,7 @@ const plan: Record<number, Piece[]> = {
   8: [{ file: R("镜08-点原话回放") }],
   9: [{ file: R("镜09-改日期并确认") }],
   10: [{ file: R("镜10-认领消息") }],
-  11: [{ file: P(11) }],
+  11: [{ file: MINE(11) || (existsSync(R("镜11-任务提醒")) ? R("镜11-任务提醒") : P(11)) }], // 通知横幅录不到,改拍设置里的任务提醒
   12: [{ file: R("镜12-下次开会对照") }],
   13: [{ file: R("镜13-看板逾期剩1") }],
   14: [{ file: R("镜14-15-问资料库MOI智能体"), to: 15.3 }],
@@ -64,7 +71,7 @@ await launchChrome();
 const page = await Page.open(9223);
 await page.send("Emulation.setDeviceMetricsOverride", { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false });
 for (const [n, text] of Object.entries(placeholders)) {
-  if (MINE(+n)) continue;
+  if (!plan[+n].some((p) => p.file === P(+n)) || MINE(+n)) continue; // 已经有素材的镜头不做占位卡
   const html = `<!doctype html><meta charset="utf-8"><style>body{margin:0;width:1920px;height:1080px;background:#e5e7eb;font-family:"PingFang SC",sans-serif;display:flex;align-items:center;justify-content:center}
   .b{width:1500px;height:760px;border:6px dashed #9ca3af;border-radius:40px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:36px;color:#374151}
   .t{font-size:44px;color:#6b7280;letter-spacing:.1em}.d{font-size:64px;font-weight:600;line-height:1.5}</style>
@@ -132,7 +139,7 @@ timeline.forEach((s, i) => {
   filters.push(`[${inputs.length / 2}:a]aresample=48000,adelay=${ms}|${ms}[a${i}]`);
 });
 const labels = timeline.filter((s) => tts[s.n]).map((_, i) => `[a${i}]`).join("");
-const out = path.join(OUT, "散会即开工-粗剪v1-TTS旁白占位.mp4");
+const out = path.join(OUT, `散会即开工-粗剪${VER}-TTS旁白占位.mp4`);
 run(["ffmpeg", "-y", "-loglevel", "error", "-i", video, ...inputs, "-filter_complex", `${filters.join(";")};${labels}amix=inputs=${filters.length}:normalize=0,loudnorm=I=-16:TP=-1.5:LRA=11,apad,atrim=0:${total.toFixed(3)}[aout]`,
   "-map", "0:v", "-map", "[aout]", "-c:v", "copy", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", out]);
 
@@ -140,10 +147,10 @@ run(["ffmpeg", "-y", "-loglevel", "error", "-i", video, ...inputs, "-filter_comp
 const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
 const srtT = (s: number) => { const ms = Math.round(s * 1000); const h = Math.floor(ms / 3600000), m = Math.floor(ms / 60000) % 60, sec = Math.floor(ms / 1000) % 60; return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")},${String(ms % 1000).padStart(3, "0")}`; };
 const srt = timeline.filter((s) => lines[s.n]).map((s, i) => `${i + 1}\n${srtT(s.start + LEAD)} --> ${srtT(s.start + LEAD + s.vo)}\n${lines[s.n]}\n`).join("\n");
-writeFileSync(path.join(OUT, "粗剪v1-旁白字幕.srt"), srt);
-const rows = timeline.map((s) => `| ${s.n} | ${fmt(s.start)} | ${s.len.toFixed(1)} 秒 | ${s.slot} 秒 | ${s.vo.toFixed(1)} 秒 | ${s.over > 0.05 ? `**超 ${s.over.toFixed(1)} 秒**` : "—"} | ${plan[s.n].some((p) => p.file.includes("占位")) ? "占位,待你录" : plan[s.n].some((p) => p.file.includes("你录的")) ? "用了你录的" : ""} |`);
-writeFileSync(path.join(OUT, "粗剪v1-时间轴.md"), [
-  "# 粗剪 v1 时间轴(TTS 旁白占位)", "",
+writeFileSync(path.join(OUT, `粗剪${VER}-旁白字幕.srt`), srt);
+const rows = timeline.map((s) => `| ${s.n} | ${fmt(s.start)} | ${s.len.toFixed(1)} 秒 | ${s.slot} 秒 | ${s.vo.toFixed(1)} 秒 | ${s.over > 0.05 ? `**超 ${s.over.toFixed(1)} 秒**` : "—"} | ${plan[s.n].some((p) => p.file.includes("占位")) ? "占位,待你录" : plan[s.n].some((p) => p.file.includes("你录的")) ? "用了「你录的」里的素材" : ""} |`);
+writeFileSync(path.join(OUT, `粗剪${VER}-时间轴.md`), [
+  `# 粗剪 ${VER} 时间轴(TTS 旁白占位)`, "",
   `- 成片总长 **${fmt(total)}**(分镜计划 2:56)。旁白声音:${VOICE},语速 ${RATE},只是占位。`,
   "- 「超」表示这一镜旁白念不完,画面定格顺延了;录真声时这几镜可以念快一点,或者删几个字。", "",
   "| 镜 | 开始 | 本镜时长 | 分镜计划 | TTS 旁白 | 超出 | 备注 |", "|---|---|---|---|---|---|---|", ...rows, ""].join("\n"));
