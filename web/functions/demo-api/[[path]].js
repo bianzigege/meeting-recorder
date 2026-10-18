@@ -109,9 +109,25 @@ function analysisPrompt(m) {
 // 访客浏览器里的最新任务状态随问题一起发过去;智能体出错时退回直接调模型。
 const AI_STUDIO = "https://api.moi.matrixorigin.cn/v5";
 
+const AGENT_TIMEOUT_MS = 120_000; // 智能体最多等 2 分钟,超时退回直接调模型,评委不用一直干等
+
 async function askAgent(env, text, send, docNames) {
+  const ac = new AbortController();
+  const ms = Number(env.MOI_AGENT_TIMEOUT_MS) || AGENT_TIMEOUT_MS;
+  const timer = setTimeout(() => ac.abort(), ms);
+  try {
+    return await readAgent(env, text, send, docNames, ac.signal);
+  } catch (e) {
+    if (ac.signal.aborted) throw new Error(`等了 ${Math.round(ms / 1000)} 秒还没答完`);
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function readAgent(env, text, send, docNames, signal) {
   const res = await fetch(`${AI_STUDIO}/workspaces/${env.MOI_WORKSPACE_ID}/agents/${env.MOI_AGENT_ID}/a2a`, {
-    method: "POST",
+    method: "POST", signal,
     headers: { "X-API-Key": env.GENESIS_API_KEY, "X-Workspace-ID": env.MOI_WORKSPACE_ID, "Content-Type": "application/json" },
     body: JSON.stringify({
       jsonrpc: "2.0", id: crypto.randomUUID(), method: "message/stream",

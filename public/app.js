@@ -52,7 +52,8 @@ function renderMarkdown(md) {
       while (i < lines.length && !/^```/.test(lines[i])) { code.push(lines[i]); i++; }
       i++; html += `<pre><code>${escapeHtml(code.join("\n"))}</code></pre>`; continue;
     }
-    let p = [];
+    // 当前行至少吃掉一行:流式回答里表头先到、分隔线还没到时,「|」开头的行哪个分支都不认,不吃掉会原地死循环
+    let p = [line]; i++;
     while (i < lines.length && !/^\s*$/.test(lines[i]) && !/^(#{1,6}\s|\s*[-*]\s|\s*\d+[.)]\s|\s*>|```|\s*\|)/.test(lines[i])) { p.push(lines[i]); i++; }
     html += `<p>${inline(p.join(" "))}</p>`;
   }
