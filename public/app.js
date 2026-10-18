@@ -1015,7 +1015,7 @@ $("#askForm").onsubmit = async (e) => {
   $("#askInput").value = "";
   askBubble("user", escapeHtml(question).replace(/\n/g, "<br>"));
   const bubble = askBubble("bot cursor", `<span class="hint">正在翻资料…</span>`);
-  let text = "", sources = [];
+  let text = "", sources = [], engine = "";
   try {
     const res = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, history: askHistory }) });
     const reader = res.body.getReader();
@@ -1037,7 +1037,8 @@ $("#askForm").onsubmit = async (e) => {
           sources = p.sources;
           bubble.innerHTML = `<span class="hint">${sources.length ? `正在读 ${sources.length} 场会议…` : ""}</span>`;
         } else if (ev === "delta") { text += p.text; bubble.innerHTML = renderAnswer(text, sources); }
-        else if (ev === "done") text = p.text;
+        else if (ev === "reset") text = ""; // 网页版:MOI 智能体没答上来,改用模型重答
+        else if (ev === "done") { text = p.text; engine = p.engine || ""; }
         else if (ev === "error") err = p.message;
       }
       $("#askLog").scrollTop = $("#askLog").scrollHeight;
@@ -1046,7 +1047,8 @@ $("#askForm").onsubmit = async (e) => {
     // 只列回答里真正引用到的会议
     const cited = sources.filter((s) => text.includes(`[[${s.ref} `));
     bubble.innerHTML = renderAnswer(text, sources) +
-      (cited.length ? `<div class="ask-sources">出自:${cited.map((s) => `<a href="#" class="cite" data-id="${s.id}" data-t="0">${escapeHtml(s.title)}</a>`).join("")}</div>` : "");
+      (cited.length ? `<div class="ask-sources">出自:${cited.map((s) => `<a href="#" class="cite" data-id="${s.id}" data-t="0">${escapeHtml(s.title)}</a>`).join("")}</div>` : "") +
+      (engine === "moi-agent" ? `<div class="ask-engine">由 MOI 智能体「散会即开工助手」检索知识库后回答</div>` : "");
     askHistory.push({ q: question, a: text });
   } catch (e2) {
     bubble.innerHTML = `<span class="error">出错了:${escapeHtml(e2.message)}</span>`;

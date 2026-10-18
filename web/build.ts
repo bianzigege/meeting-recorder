@@ -54,6 +54,7 @@ for (const id of (await readdir(SAMPLES)).filter((d) => /^\d{8}-\d{6}/.test(d)).
 }
 const templates = DEFAULT_TEMPLATES.map((t) => ({ ...t }));
 await writeFile(path.join(DIST, "samples", "seed.json"), JSON.stringify({ version: Date.now(), meetings, templates }));
-await writeFile(path.join(WEB, "lib", "seed.js"), `// 由 web/build.ts 生成,别手改\nexport default ${JSON.stringify({ meetings: fnMeetings, templates, COMMON_RULES })};\n`);
+const moi = existsSync(path.join(WEB, "moi.json")) ? JSON.parse(await readFile(path.join(WEB, "moi.json"), "utf8")) : {};
+await writeFile(path.join(WEB, "lib", "seed.js"), `// 由 web/build.ts 生成,别手改\nexport default ${JSON.stringify({ meetings: fnMeetings, templates, COMMON_RULES, kbDocs: moi.docs || {} })};\n`);
 await writeFile(path.join(DIST, "_headers"), "/samples/*\n  Cache-Control: public, max-age=3600\n/*\n  X-Content-Type-Options: nosniff\n");
 console.log(`已生成 web/dist:${Object.keys(meetings).length} 场示例会议,${templates.length} 个模板`);

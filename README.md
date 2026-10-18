@@ -214,3 +214,4 @@ MIT
 - 需要 AI 的四个动作(问资料库、分析、提取行动项、对照旧任务)走 `web/functions/demo-api` 云端函数,调用 MOI Genesis(qwen3.8-flash,关闭思考)。Key 只放在 Cloudflare 的环境变量里。
 - 提示词和纯逻辑在 `shared/core.js`,本地服务、演示页、云端函数共用。
 - 本地预览:`web/dev.sh`(http://localhost:8788);发布:`web/deploy.sh`。
+- 问资料库交给 MOI 上的智能体「散会即开工助手」回答:它绑定了示例会议的知识库(`web/kb/`,由 `web/kb-build.ts` 生成,`bun web/moi-sync.ts` 同步进 MOI),通过 A2A 流式接口调用,访客浏览器里的最新任务状态随问题一起发过去;智能体出错时自动退回直接调模型。

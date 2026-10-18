@@ -1,3 +1,9 @@
 name = "sanhui-kaigong"
 pages_build_output_dir = "dist"
 compatibility_date = "2026-10-01"
+
+# MOI 上的「散会即开工助手」智能体(不是密钥;Key 在 Cloudflare secret GENESIS_API_KEY 里)
+[vars]
+MOI_WORKSPACE_ID = "c00886be-3ee1-52e1-f07b-e3f2959011d5"
+MOI_AGENT_ID = "b7f3c1d2-4e58-4a91-9c6d-2f0a8e5b7c31"
+MOI_AGENT_MODEL = "deepseek-v4.1-flash"

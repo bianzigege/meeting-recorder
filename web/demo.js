@@ -252,6 +252,8 @@
     document.querySelector(".topbar").after(banner);
     banner.querySelector("#demoReset").onclick = () => { try { localStorage.removeItem(KEY); } catch {} location.reload(); };
 
+    const askHint = document.querySelector("#askDlg .hint");
+    if (askHint) askHint.textContent = "问题交给 MOI 上的智能体「散会即开工助手」:它绑定了这三场会议的知识库,先检索再回答,通常要半分钟到 1 分钟。回答里的出处可以点,直接跳到那场会议的那一句。";
     const rec = document.querySelector(".card.recorder");
     if (rec) {
       const intro = document.createElement("div");

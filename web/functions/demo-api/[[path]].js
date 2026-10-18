@@ -104,6 +104,61 @@ function analysisPrompt(m) {
   return `会议标题:${m.title}\n时长:${core.fmtTime(m.durationSec)}\n${note}\n\n<transcript>\n${m.transcript}\n</transcript>`;
 }
 
+// ---------- MOI 智能体(A2A) ----------
+// 问资料库优先交给 MOI 上的「散会即开工助手」:它绑定了示例会议的知识库,自己检索再回答。
+// 访客浏览器里的最新任务状态随问题一起发过去;智能体出错时退回直接调模型。
+const AI_STUDIO = "https://api.moi.matrixorigin.cn/v5";
+
+async function askAgent(env, text, send, docNames) {
+  const res = await fetch(`${AI_STUDIO}/workspaces/${env.MOI_WORKSPACE_ID}/agents/${env.MOI_AGENT_ID}/a2a`, {
+    method: "POST",
+    headers: { "X-API-Key": env.GENESIS_API_KEY, "X-Workspace-ID": env.MOI_WORKSPACE_ID, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0", id: crypto.randomUUID(), method: "message/stream",
+      params: { model: env.MOI_AGENT_MODEL || "deepseek-v4.1-flash", message: { kind: "message", role: "user", messageId: crypto.randomUUID(), parts: [{ kind: "text", text }] } },
+    }),
+  });
+  if (!res.ok || !res.body) throw new Error(`MOI 智能体 ${res.status}:${(await res.text().catch(() => "")).slice(0, 160)}`);
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "", streamed = "", finalText = "", searches = 0;
+  const seen = new Set();
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf("\n\n")) >= 0) {
+      const frame = buf.slice(0, i); buf = buf.slice(i + 2);
+      // 先用字符串粗筛,大部分是心跳和「Working」状态帧,不必解析
+      if (!/text_delta|tool_call"|RAG Chunks|Final Answer|"failed"|"canceled"|"error"/.test(frame)) continue;
+      const line = frame.split("\n").find((l) => l.startsWith("data: "));
+      if (!line) continue;
+      let d;
+      try { d = JSON.parse(line.slice(6)); } catch { continue; }
+      if (d.error) throw new Error("MOI 智能体:" + (d.error.message || JSON.stringify(d.error)).slice(0, 160));
+      const r = d.result || {}, md = r.metadata || {};
+      const kind = md.eventKind;
+      if (r.status?.state === "failed" || r.status?.state === "canceled") throw new Error("MOI 智能体没能完成这次回答");
+      if (kind === "tool_call") { searches++; await send("stage", { text: `MOI 智能体正在检索知识库(第 ${searches} 次)…` }); }
+      else if (r.kind === "artifact-update" && r.artifact?.name === "RAG Chunks") {
+        const chunks = r.artifact.parts?.find((p) => p.kind === "data")?.data?.chunks || [];
+        const hit = [...new Set(chunks.map((c) => docNames(String(c.chunk_id || "").split("_chunk_")[0])).filter(Boolean))];
+        if (hit.length) await send("stage", { text: `在${hit.map((n) => `「${n}」`).join("")}里找到 ${chunks.length} 段相关记录,正在整理回答…` });
+      } else if (kind === "text_delta") {
+        const key = md.liveTextEventKey || md.eventCursor;
+        if (key != null && seen.has(key)) continue;
+        seen.add(key);
+        for (const p of r.status?.message?.parts || []) if (p.kind === "text" && p.text) { streamed += p.text; await send("delta", { text: p.text }); }
+      } else if (r.kind === "artifact-update" && r.artifact?.name === "Final Answer") {
+        finalText = (r.artifact.parts || []).filter((p) => p.kind === "text").map((p) => p.text).join("");
+      }
+    }
+  }
+  // 智能体偶尔把出处包进反引号,去掉,页面才能把它变成可点的链接
+  return (finalText || streamed).replace(/`(\[\[M\d+ \d{1,3}:\d{2}\]\])`/g, "$1");
+}
+
 const handlers = {
   async ask(body, env) {
     const question = str(body.question, 500).trim();
@@ -114,11 +169,29 @@ const handlers = {
     const tasks = core.formatTasksBlock(cleanTasks(body.tasks), refById, TODAY);
     const docs = list.map(({ ref, m }) => `<meeting ref="${ref}">\n${ref}「${m.title}」${core.localDate(new Date(m.createdAt))} 时长 ${core.fmtTime(m.durationSec)}\n${m.transcript}\n</meeting>`).join("\n\n");
     const prompt = `${tasks.block ? tasks.block + "\n\n" : ""}${docs}\n\n${history ? history + "\n\n" : ""}现在的问题:${question}`;
+    // 发给智能体的消息:当前日期 + 访客浏览器里的最新任务清单 + 最近几轮对话 + 问题(逐字稿在它的知识库里)
+    const agentText = [
+      `【当前日期】${TODAY}`,
+      tasks.lines.length ? `【当前任务清单】(访问者浏览器里的最新状态,任务状态以此为准;方括号是定下它的会议编号和时间点)\n${tasks.lines.join("\n")}` : "",
+      history ? `【之前的对话】\n${history}` : "",
+      `【问题】${question}`,
+    ].filter(Boolean).join("\n\n");
+    const docNames = (fileId) => (seed.kbDocs || {})[fileId] || "";
     return sse(async (send) => {
       await send("sources", { sources: list.map(({ ref, m }) => ({ ref, id: m.id, title: m.title, createdAt: m.createdAt })) });
+      if (env.MOI_AGENT_ID && env.MOI_WORKSPACE_ID && body.engine !== "model") {
+        try {
+          await send("stage", { text: "已交给 MOI 智能体「散会即开工助手」,它会先检索知识库再回答,通常要半分钟到 1 分钟…" });
+          const text = await askAgent(env, agentText, send, docNames);
+          if (text) { await send("done", { text, engine: "moi-agent" }); return; }
+        } catch (e) {
+          await send("stage", { text: `MOI 智能体这次没答上来(${String(e?.message || e).slice(0, 60)}),改用模型直接回答…` });
+          await send("reset", {});
+        }
+      }
       const res = await llm(env, core.ASK_SYSTEM, prompt, { stream: true, maxTokens: 2000 });
       const text = await readDeltas(res, (d) => send("delta", { text: d }));
-      await send("done", { text });
+      await send("done", { text, engine: "model" });
     });
   },
 
