@@ -59,6 +59,7 @@ type Config = {
   autoExtractActions: string; // 转写完自动提取行动项
   remindEnabled: string; // 每天按时提醒到期 / 逾期的任务(macOS 通知)
   remindHour: string; // 几点提醒(0-23)
+  remindFrequency: string; // daily = 每天一次;halfday = 每半天一次(remindHour 点和 12 小时后)
 };
 
 const DEFAULT_SUMMARY_PROMPT = `你是一位专业的会议记录员。根据下面的会议转写文本,输出一份结构化的中文会议纪要,使用 Markdown 格式,包含以下部分:
@@ -108,6 +109,7 @@ function envDefaults(): Config {
     autoExtractActions: "1",
     remindEnabled: "1",
     remindHour: "9",
+    remindFrequency: "daily",
     autoTitle: "1",
     discardShort: "1",
     backupDir: "",
@@ -1411,7 +1413,7 @@ async function resolveReview(id: string, actionId: string, accept: boolean, newM
 }
 
 // ---------- 到期提醒 ----------
-// 每天到点扫一遍所有未完成任务:逾期、今天到期、明天到期,合成一条 macOS 通知。
+// 到点扫一遍所有未完成任务:逾期、今天到期、明天到期,合成一条 macOS 通知。每天一次或每半天一次,时间表在 core.remindHours。
 // 指到别的会议库(示例数据)时,提醒记录跟着那个库走,不碰真实库的记录
 const REMIND_STATE_PATH = process.env.MEETINGS_DIR ? path.join(MEETINGS_DIR, ".reminders.json") : path.join(ROOT, "reminders.json");
 
@@ -1462,14 +1464,12 @@ async function sendDueReminder(force = false) {
 async function reminderTick() {
   const cfg = await loadConfig();
   if (cfg.remindEnabled !== "1") return;
-  const hour = Math.min(23, Math.max(0, Number(cfg.remindHour) || 9));
-  if (new Date().getHours() < hour) return;
-  let state: { lastDailyRun?: string } = {};
+  let state: { lastSlot?: string; lastDailyRun?: string } = {};
   try { state = JSON.parse(await readFile(REMIND_STATE_PATH, "utf8")); } catch {}
-  const today = todayStr();
-  if (state.lastDailyRun === today) return;
+  const slot = core.remindSlotToSend(new Date(), { hour: cfg.remindHour, frequency: cfg.remindFrequency }, state, todayStr());
+  if (!slot) return;
   const r = await sendDueReminder();
-  await writeFile(REMIND_STATE_PATH, JSON.stringify({ lastDailyRun: today, lastResult: { sent: r.sent, overdue: r.overdue.length, today: r.today.length, tomorrow: r.tomorrow.length } }));
+  await writeFile(REMIND_STATE_PATH, JSON.stringify({ lastSlot: slot.key, lastResult: { sent: r.sent, overdue: r.overdue.length, today: r.today.length, tomorrow: r.tomorrow.length } }));
   console.log(`任务提醒:${r.sent ? "已发送" : "没有到期任务"}(逾期 ${r.overdue.length} / 今天 ${r.today.length} / 明天 ${r.tomorrow.length})`);
 }
 setTimeout(() => reminderTick().catch((e) => console.error("任务提醒失败:", e?.message || e)), 20_000);
@@ -2092,7 +2092,13 @@ async function handleApi(req: Request, url: URL): Promise<Response> {
   }
 
   if (parts[1] === "reminders") {
-    if (method === "GET") return json(await dueDigest());
+    if (method === "GET") {
+      // 设置页还没保存时,用表单里的时间和频率算预览
+      const cfg = await loadConfig();
+      const q = url.searchParams;
+      const opts = { hour: q.get("hour") || cfg.remindHour, frequency: q.get("frequency") || cfg.remindFrequency };
+      return json({ ...(await dueDigest()), plan: core.remindPlanText(new Date(), opts) });
+    }
     if (method === "POST") return json(await sendDueReminder(true));
   }
 

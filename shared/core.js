@@ -224,6 +224,41 @@ export function dueDigestFrom(all, today) {
   };
 }
 
+// ---------- 提醒时间表 ----------
+// daily = 每天 remindHour 点一次;halfday = remindHour 点和 12 小时后各一次,一天正好两次。
+// 老配置没有 remindFrequency,按 daily 处理。opts = { hour, frequency }
+export function remindHours({ hour, frequency }) {
+  const n = Number.parseInt(hour, 10);
+  const h = Number.isFinite(n) ? Math.min(23, Math.max(0, n)) : 9;
+  return frequency === "halfday" ? [h % 12, (h % 12) + 12] : [h];
+}
+
+// 现在轮到哪个时段:今天已经到点的最近一个;还没到今天第一个就是 null。
+// key = 日期 + 第几个时段(如 2026-10-18#1),去重就比这个。today 可以传固定的演示日期
+export function dueRemindSlot(now, opts, today = localDate(now)) {
+  const hours = remindHours(opts);
+  const i = hours.findLastIndex((h) => h <= now.getHours());
+  return i < 0 ? null : { key: `${today}#${i}`, hour: hours[i] };
+}
+
+// 去重记录里上次发到哪个时段。老版本只记了日期(lastDailyRun),当作那天的第一个时段
+export const lastRemindKey = (state) => state?.lastSlot || (state?.lastDailyRun ? `${state.lastDailyRun}#0` : "");
+
+// 这次检查要不要发:轮到的时段比上次发的晚才发。
+// 10 分钟查一次也只发一条;电脑睡过了好几个时段,醒来只补最近的一条;当天改了时间不会把发过的时段再发一遍
+export function remindSlotToSend(now, opts, state, today = localDate(now)) {
+  const slot = dueRemindSlot(now, opts, today);
+  return slot && slot.key > lastRemindKey(state) ? slot : null;
+}
+
+// 设置页预览:「每天 9:00 和 21:00 各提醒一次，下一次：今天 21:00。」
+export function remindPlanText(now, opts) {
+  const hours = remindHours(opts);
+  const next = hours.find((h) => h > now.getHours());
+  const when = hours.map((h) => `${h}:00`).join(" 和 ");
+  return `每天 ${when} ${hours.length > 1 ? "各" : ""}提醒一次，下一次：${next === undefined ? `明天 ${hours[0]}:00` : `今天 ${next}:00`}。`;
+}
+
 // ---------- 问资料库:任务清单 ----------
 // refById:会议 id → M编号。只收资料库里有的会议
 export function formatTasksBlock(tasks, refById, today) {

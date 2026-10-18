@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "bun run server.ts",
-    "dev": "bun --watch run server.ts"
+    "dev": "bun --watch run server.ts",
+    "test": "bun test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.132.1",

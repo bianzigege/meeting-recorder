@@ -39,7 +39,7 @@
   const SETTINGS = {
     transcribeProvider: "local", localTranscribeAvailable: true, transcribeLanguage: "zh",
     summaryProvider: "openai", openaiBaseUrl: "https://token.moi.matrixorigin.cn/v1", openaiModel: "qwen3.8-flash", openaiApiKey: "", hasOpenaiKey: true,
-    autoTranscribe: "1", autoAnalyze: "0", autoTitle: "1", autoExtractActions: "1", remindEnabled: "1", remindHour: "9",
+    autoTranscribe: "1", autoAnalyze: "0", autoTitle: "1", autoExtractActions: "1", remindEnabled: "1", remindHour: "9", remindFrequency: "daily",
     discardShort: "1", autoImportVoiceMemos: "0", backupDir: "", backupScope: "text", myName: "",
   };
 
@@ -119,7 +119,7 @@
     if (p1 === "ping") return json({ ok: true, appMode: false });
     if (p1 === "settings") {
       if (method === "POST") {
-        for (const k of ["remindEnabled", "remindHour", "autoExtractActions", "myName"]) if (k in (body || {})) state.settings[k] = body[k];
+        for (const k of ["remindEnabled", "remindHour", "remindFrequency", "autoExtractActions", "myName"]) if (k in (body || {})) state.settings[k] = body[k];
         save();
       }
       return json({ ...SETTINGS, ...state.settings });
@@ -127,7 +127,12 @@
     if (p1 === "claude-status") return json({ found: "", loggedIn: true, message: "演示版的模型走 MOI Genesis(qwen3.8-flash)" });
     if (p1 === "record") return p2 === "status" ? json({ active: false, state: "idle" }) : p2 === "sources" ? json({ displays: [], windows: [] }) : fail("演示版不能录制。录制、转写在 Mac 版里完成,这里放的是三场已转写的示例会议。");
     if (p1 === "briefing") return json(core.briefingFrom(metas(), allActions(), TODAY));
-    if (p1 === "reminders") return method === "GET" ? json(core.dueDigestFrom(allActions(), TODAY)) : json({ sent: false });
+    if (p1 === "reminders") {
+      if (method !== "GET") return json({ sent: false });
+      const cfg = { ...SETTINGS, ...state.settings }, q = url.searchParams;
+      const plan = core.remindPlanText(new Date(), { hour: q.get("hour") || cfg.remindHour, frequency: q.get("frequency") || cfg.remindFrequency });
+      return json({ ...core.dueDigestFrom(allActions(), TODAY), plan });
+    }
     if (p1 === "actions") return json(allActions());
     if (p1 === "templates") return method === "GET" ? json({ templates: state.templates, defaults: state.templates }) : fail("演示版不能改模板");
     if (p1 === "glossary") return method === "GET" ? json([]) : fail(NOT_HERE);

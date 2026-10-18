@@ -1558,11 +1558,15 @@ $("#btnCopyClaim").onclick = async () => { await copyText($("#claimText").value)
 // ---------- 任务提醒(设置里) ----------
 async function loadRemindPreview() {
   const el = $("#remindPreview");
+  const f = form.elements;
   try {
-    const d = await api("/api/reminders");
-    el.textContent = `现在的情况：逾期 ${d.overdue.length} 条 · 今天到期 ${d.today.length} 条 · 明天到期 ${d.tomorrow.length} 条。`;
+    // 用表单里还没保存的时间和频率算「下一次」
+    const d = await api("/api/reminders?" + new URLSearchParams({ hour: f.remindHour.value, frequency: f.remindFrequency.value }));
+    const plan = f.remindEnabled.checked ? d.plan : "提醒已关闭。";
+    el.innerText = `${plan}\n现在的情况：逾期 ${d.overdue.length} 条 · 今天到期 ${d.today.length} 条 · 明天到期 ${d.tomorrow.length} 条。`;
   } catch { el.textContent = ""; }
 }
+for (const k of ["remindEnabled", "remindFrequency", "remindHour"]) form.elements[k].addEventListener("change", loadRemindPreview);
 $("#btnRemindTest").onclick = async () => {
   const btn = $("#btnRemindTest");
   btn.disabled = true;
