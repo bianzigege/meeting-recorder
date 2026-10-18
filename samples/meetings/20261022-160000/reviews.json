@@ -1,0 +1,86 @@
+[
+  {
+    "actionId": "amvdgg4qeudsn",
+    "meetingId": "20261019-100000",
+    "text": "把正式报价单发给客户财务",
+    "owner": "周姐",
+    "suggested": "done",
+    "t": 0,
+    "quote": "我周二就发给他们财务了,对方已经确认收到",
+    "confidence": 0.95,
+    "createdAt": "2026-10-18T06:40:07.340Z",
+    "resolved": "accepted"
+  },
+  {
+    "actionId": "amvdgg4qe62nm",
+    "meetingId": "20261019-100000",
+    "text": "排出首播前两周的主播排班表给周姐",
+    "owner": "小林",
+    "suggested": "doing",
+    "t": 9,
+    "quote": "排班表我排了一版…明天发你看",
+    "confidence": 0.9,
+    "createdAt": "2026-10-18T06:40:07.340Z",
+    "resolved": "accepted"
+  },
+  {
+    "actionId": "amvdgg4qe2kka",
+    "meetingId": "20261019-100000",
+    "text": "跟客户市场部对接30个SKU样品的寄送地址和清单",
+    "owner": "小林",
+    "suggested": "doing",
+    "t": 21,
+    "quote": "样品他们周三发的顺丰,现在在路上",
+    "confidence": 0.9,
+    "createdAt": "2026-10-18T06:40:07.340Z",
+    "resolved": "accepted"
+  },
+  {
+    "actionId": "amvdgg4qeh00s",
+    "meetingId": "20261019-100000",
+    "text": "收集泰国公司营业执照材料并用TSP绑定开通TikTok店铺",
+    "owner": "小林",
+    "suggested": "doing",
+    "t": 32,
+    "quote": "还差一个银行开户许可,我已经催了,月底应该没问题",
+    "confidence": 0.9,
+    "createdAt": "2026-10-18T06:40:07.340Z",
+    "resolved": "accepted"
+  },
+  {
+    "actionId": "amvdgg4qewami",
+    "meetingId": "20261019-100000",
+    "text": "做好周报模板(含GMV、观看人数、转化率、退货率)并发给客户看格式",
+    "owner": "小林",
+    "suggested": "done",
+    "t": 45,
+    "quote": "周五发给他们了,客户说格式可以",
+    "confidence": 0.95,
+    "createdAt": "2026-10-18T06:40:07.340Z",
+    "resolved": "accepted"
+  },
+  {
+    "actionId": "amvdgg4qefus3",
+    "meetingId": "20261019-100000",
+    "text": "安排实习生做同类目前三名直播间的竞品分析",
+    "owner": "周姐",
+    "suggested": "dropped",
+    "t": 61,
+    "quote": "对竞品分析取消",
+    "confidence": 0.98,
+    "createdAt": "2026-10-18T06:40:07.340Z",
+    "resolved": "accepted"
+  },
+  {
+    "actionId": "amvdgg4qehiww",
+    "meetingId": "20261019-100000",
+    "text": "组织下一次项目进度会",
+    "owner": "周姐",
+    "suggested": "doing",
+    "t": 106,
+    "quote": "下周一首播前再碰一次",
+    "confidence": 0.8,
+    "createdAt": "2026-10-18T06:40:07.340Z",
+    "resolved": "accepted"
+  }
+]

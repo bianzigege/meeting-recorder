@@ -1,0 +1,122 @@
+[
+  {
+    "id": "amvdggzpu4590",
+    "text": "把排班表发给周姐确认",
+    "owner": "小林",
+    "due": "2026-10-23",
+    "dueText": "明天",
+    "status": "todo",
+    "source": {
+      "t": 9,
+      "quote": "排班表我排了一版……明天发你看"
+    },
+    "confidence": 0.95,
+    "createdAt": "2026-10-18T06:39:49.458Z",
+    "updatedAt": "2026-10-18T06:40:20.432Z"
+  },
+  {
+    "id": "amvdggzpu210m",
+    "text": "样品到直播间后拍照放群里",
+    "owner": "小林",
+    "due": "2026-10-23",
+    "dueText": "这周五",
+    "status": "todo",
+    "source": {
+      "t": 21,
+      "quote": "预计这周五到直播间,到了我拍照放群里"
+    },
+    "confidence": 0.9,
+    "createdAt": "2026-10-18T06:39:49.458Z",
+    "updatedAt": "2026-10-18T06:40:20.432Z"
+  },
+  {
+    "id": "amvdggzpuzz15",
+    "text": "催对方补齐银行开户许可",
+    "owner": "小林",
+    "due": "2026-10-31",
+    "dueText": "月底",
+    "status": "todo",
+    "source": {
+      "t": 32,
+      "quote": "还差一个银行开户许可,我已经催了,月底应该没问题"
+    },
+    "confidence": 0.9,
+    "createdAt": "2026-10-18T06:39:49.458Z",
+    "updatedAt": "2026-10-18T06:40:20.432Z"
+  },
+  {
+    "id": "amvdggzputv74",
+    "text": "写首播脚本第一版给周姐看",
+    "owner": "小林",
+    "due": "2026-10-28",
+    "dueText": "下周三前",
+    "status": "todo",
+    "source": {
+      "t": 61,
+      "quote": "首播脚本你来写,下周三前给我看第一版"
+    },
+    "confidence": 0.98,
+    "createdAt": "2026-10-18T06:39:49.458Z",
+    "updatedAt": "2026-10-18T06:40:20.432Z"
+  },
+  {
+    "id": "amvdggzpu3qrw",
+    "text": "做投流投放计划并发客户确认",
+    "owner": "周姐",
+    "due": "2026-10-23",
+    "dueText": "这周五之前",
+    "status": "todo",
+    "source": {
+      "t": 71,
+      "quote": "这周五之前把投放计划做出来发客户确认"
+    },
+    "confidence": 0.95,
+    "createdAt": "2026-10-18T06:39:49.458Z",
+    "updatedAt": "2026-10-18T06:40:20.432Z"
+  },
+  {
+    "id": "amvdggzpuspok",
+    "text": "整理历史投放数据发给周姐",
+    "owner": "小林",
+    "due": "2026-10-23",
+    "dueText": "明天",
+    "status": "todo",
+    "source": {
+      "t": 82,
+      "quote": "要,明天给我"
+    },
+    "confidence": 0.95,
+    "createdAt": "2026-10-18T06:39:49.458Z",
+    "updatedAt": "2026-10-18T06:40:20.432Z"
+  },
+  {
+    "id": "amvdggzpua3ap",
+    "text": "约主播和场地做首播彩排",
+    "owner": "小林",
+    "due": "2026-10-30",
+    "dueText": "下周五",
+    "status": "todo",
+    "source": {
+      "t": 82,
+      "quote": "下周五下午你负责约主播和场地"
+    },
+    "confidence": 0.95,
+    "createdAt": "2026-10-18T06:39:49.458Z",
+    "updatedAt": "2026-10-18T06:40:20.432Z"
+  },
+  {
+    "id": "amvdggzpuqn15",
+    "text": "首播前碰一次进度会",
+    "owner": "",
+    "due": "2026-10-26",
+    "dueText": "下周一",
+    "status": "todo",
+    "source": {
+      "t": 106,
+      "quote": "下周一首播前再碰一次"
+    },
+    "confidence": 0.7,
+    "createdAt": "2026-10-18T06:39:49.458Z",
+    "updatedAt": "2026-10-18T06:40:20.432Z"
+  }
+]

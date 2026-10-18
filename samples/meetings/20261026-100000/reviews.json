@@ -1,0 +1,101 @@
+[
+  {
+    "actionId": "amvdggzpu4590",
+    "meetingId": "20261022-160000",
+    "text": "把排班表发给周姐确认",
+    "owner": "小林",
+    "suggested": "done",
+    "t": 4,
+    "quote": "好排班表这件算。完成",
+    "confidence": 0.9,
+    "createdAt": "2026-10-18T06:40:58.677Z"
+  },
+  {
+    "actionId": "amvdggzpu210m",
+    "meetingId": "20261022-160000",
+    "text": "样品到直播间后拍照放群里",
+    "owner": "小林",
+    "suggested": "done",
+    "t": 4,
+    "quote": "样品上周五到了 30个...照片我发群里了",
+    "confidence": 0.95,
+    "createdAt": "2026-10-18T06:40:58.677Z"
+  },
+  {
+    "actionId": "amvdggzputv74",
+    "meetingId": "20261022-160000",
+    "text": "写首播脚本第一版给周姐看",
+    "owner": "小林",
+    "suggested": "done",
+    "t": 35,
+    "quote": "首播脚本我给你的第一版 ，你看了吗",
+    "confidence": 0.9,
+    "createdAt": "2026-10-18T06:40:58.677Z"
+  },
+  {
+    "actionId": "amvdggzpu3qrw",
+    "meetingId": "20261022-160000",
+    "text": "做投流投放计划并发客户确认",
+    "owner": "周姐",
+    "suggested": "done",
+    "t": 22,
+    "quote": "投放计划客户上周五确认了 3000美金",
+    "confidence": 0.95,
+    "createdAt": "2026-10-18T06:40:58.677Z"
+  },
+  {
+    "actionId": "amvdggzpua3ap",
+    "meetingId": "20261022-160000",
+    "text": "约主播和场地做首播彩排",
+    "owner": "小林",
+    "suggested": "done",
+    "t": 49,
+    "quote": "彩排我已经约好了 ，这周五下午 2点两个主播都能来",
+    "confidence": 0.95,
+    "createdAt": "2026-10-18T06:40:58.677Z"
+  },
+  {
+    "actionId": "amvdggzpuqn15",
+    "meetingId": "20261022-160000",
+    "text": "首播前碰一次进度会",
+    "owner": "",
+    "suggested": "done",
+    "t": 0,
+    "quote": "今天把准备情况过一遍",
+    "confidence": 0.7,
+    "createdAt": "2026-10-18T06:40:58.677Z"
+  },
+  {
+    "actionId": "amvdgg4qe62nm",
+    "meetingId": "20261019-100000",
+    "text": "排出首播前两周的主播排班表给周姐",
+    "owner": "小林",
+    "suggested": "done",
+    "t": 0,
+    "quote": "排班表我看了没问题就按你排的来",
+    "confidence": 0.9,
+    "createdAt": "2026-10-18T06:40:58.677Z"
+  },
+  {
+    "actionId": "amvdgg4qe2kka",
+    "meetingId": "20261019-100000",
+    "text": "跟客户市场部对接30个SKU样品的寄送地址和清单",
+    "owner": "小林",
+    "suggested": "done",
+    "t": 4,
+    "quote": "样品上周五到了 30个",
+    "confidence": 0.9,
+    "createdAt": "2026-10-18T06:40:58.677Z"
+  },
+  {
+    "actionId": "amvdgg4qeh00s",
+    "meetingId": "20261019-100000",
+    "text": "收集泰国公司营业执照材料并用TSP绑定开通TikTok店铺",
+    "owner": "小林",
+    "suggested": "done",
+    "t": 18,
+    "quote": "店铺上周五开出来了 ，已经绑到我们的 TSP上",
+    "confidence": 0.95,
+    "createdAt": "2026-10-18T06:40:58.677Z"
+  }
+]

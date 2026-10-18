@@ -1,0 +1,77 @@
+[
+  {
+    "id": "amvdgi094woir",
+    "text": "把首播脚本第二版改好发给周姐",
+    "owner": "小林",
+    "due": "2026-10-28",
+    "dueText": "周三之前",
+    "status": "pending",
+    "source": {
+      "t": 36,
+      "quote": "你改一版周三之前给我第二版"
+    },
+    "confidence": 0.95,
+    "createdAt": "2026-10-18T06:40:36.808Z",
+    "updatedAt": "2026-10-18T06:40:36.808Z"
+  },
+  {
+    "id": "amvdgi094m97t",
+    "text": "盯直播间布置(背景板和灯光)完成",
+    "owner": "小林",
+    "due": "2026-10-29",
+    "dueText": "周四之前",
+    "status": "pending",
+    "source": {
+      "t": 56,
+      "quote": "直播间布置背景板灯光周四之前弄好"
+    },
+    "confidence": 0.9,
+    "createdAt": "2026-10-18T06:40:36.808Z",
+    "updatedAt": "2026-10-18T06:40:36.808Z"
+  },
+  {
+    "id": "amvdgi0947h4x",
+    "text": "写出退换货和物流的客服话术标准回复给客户审",
+    "owner": "小林",
+    "due": "2026-10-29",
+    "dueText": "周四前",
+    "status": "pending",
+    "source": {
+      "t": 67,
+      "quote": "客服话术退换货和物流的标准回复周四前写出来"
+    },
+    "confidence": 0.95,
+    "createdAt": "2026-10-18T06:40:36.808Z",
+    "updatedAt": "2026-10-18T06:40:36.808Z"
+  },
+  {
+    "id": "amvdgi094xgbw",
+    "text": "跟设计沟通出三版开播海报",
+    "owner": "小林",
+    "due": "2026-10-28",
+    "dueText": "周三前",
+    "status": "pending",
+    "source": {
+      "t": 79,
+      "quote": "我去跟设计说周三前"
+    },
+    "confidence": 0.9,
+    "createdAt": "2026-10-18T06:40:36.808Z",
+    "updatedAt": "2026-10-18T06:40:36.808Z"
+  },
+  {
+    "id": "amvdgi094pu1s",
+    "text": "约客户开首播复盘会",
+    "owner": "周姐",
+    "due": "2026-11-02",
+    "dueText": "11月2号",
+    "status": "pending",
+    "source": {
+      "t": 85,
+      "quote": "11月2号开复盘会,我来约客户"
+    },
+    "confidence": 0.95,
+    "createdAt": "2026-10-18T06:40:36.808Z",
+    "updatedAt": "2026-10-18T06:40:36.808Z"
+  }
+]

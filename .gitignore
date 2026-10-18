@@ -1,5 +1,5 @@
 node_modules/
-meetings/
+/meetings/
 config.json
 .env
 .DS_Store

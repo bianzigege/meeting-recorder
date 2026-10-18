@@ -1,0 +1,19 @@
+{
+  "id": "20261026-100000",
+  "title": "橙子美妆首播前最后检查",
+  "createdAt": "2026-10-26T10:00:00+07:00",
+  "durationSec": 109,
+  "audioFile": "audio.m4a",
+  "status": "done",
+  "mode": "audio",
+  "tracks": {
+    "mic": "mic.m4a",
+    "system": "system.m4a"
+  },
+  "speakerNames": {
+    "mic": "周姐",
+    "system": "小林"
+  },
+  "transcribeModel": "macOS 本地识别",
+  "claudeModel": "qwen3.8-flash (token.moi.matrixorigin.cn)"
+}
