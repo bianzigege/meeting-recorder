@@ -517,10 +517,14 @@ function resultIds() {
 
 function renderTabs() {
   const ids = resultIds();
-  if (!activeTab || (activeTab !== "transcript" && !ids.includes(activeTab))) activeTab = ids[0] || "transcript";
+  if (!activeTab || (activeTab !== "transcript" && activeTab !== "actions" && !ids.includes(activeTab))) activeTab = ids[0] || "transcript";
+  const pending = actions.filter((a) => a.status === "pending").length;
+  const open = actions.filter((a) => a.status === "todo" || a.status === "doing").length;
+  const actLabel = `行动项${pending ? ` <span class="tab-badge warn">${pending} 待确认</span>` : open ? ` <span class="tab-badge">${open}</span>` : ""}`;
   $("#tabs").innerHTML = ids.map((id) =>
     `<button class="tab${id === activeTab ? " active" : ""}${id in streaming ? " live" : ""}" data-tab="${escapeHtml(id)}">${escapeHtml(tplName(id))}</button>`
-  ).join("") + `<button class="tab${activeTab === "transcript" ? " active" : ""}" data-tab="transcript">转写原文</button>`;
+  ).join("") + (current?.transcript ? `<button class="tab${activeTab === "actions" ? " active" : ""}" data-tab="actions">${actLabel}</button>` : "")
+    + `<button class="tab${activeTab === "transcript" ? " active" : ""}" data-tab="transcript">转写原文</button>`;
 }
 $("#tabs").addEventListener("click", (e) => {
   const t = e.target.closest(".tab");
@@ -535,9 +539,12 @@ function switchTab(name) {
 
 function renderPane() {
   const isTranscript = activeTab === "transcript";
+  const isActions = activeTab === "actions";
   $("#paneTranscript").hidden = !isTranscript;
-  $("#paneResult").hidden = isTranscript;
+  $("#paneActions").hidden = !isActions;
+  $("#paneResult").hidden = isTranscript || isActions;
   if (isTranscript) return;
+  if (isActions) { renderActions(); return; }
   const live = activeTab in streaming;
   const text = live ? streaming[activeTab] : current?.results?.[activeTab] || "";
   const isMap = tplFormat(activeTab) === "mindmap";
@@ -633,6 +640,7 @@ async function openMeeting(id, keepTab = false) {
   if (id !== currentId && !keepTab) activeTab = null;
   currentId = id;
   current = await api(`/api/meetings/${id}`);
+  await loadActions();
   $("#emptyDetail").hidden = true;
   $("#detailBody").hidden = false;
   $("#dTitle").textContent = current.title;
@@ -1276,3 +1284,181 @@ api("/api/record/status").then((st) => { if (st.active) watchRecording(); }).cat
 // 应用模式下的心跳:窗口关掉 30 秒后服务自动退出
 setInterval(() => fetch("/api/ping").catch(() => {}), 5000);
 fetch("/api/ping").catch(() => {});
+
+// ---------- 行动项(会议变行动) ----------
+let actions = [], actionsBusy = false;
+const ACT_STATUS = { pending: "待确认", todo: "待办", doing: "进行中", done: "已完成", dropped: "搁置" };
+const ACT_ORDER = { pending: 0, doing: 1, todo: 2, done: 3, dropped: 4 };
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+const dueClass = (a) => (!a.due || a.status === "done" || a.status === "dropped") ? "" : a.due < today() ? "overdue" : a.due === today() ? "due-today" : "";
+const dueLabel = (a) => !a.due ? "" : a.due < today() && a.status !== "done" && a.status !== "dropped" ? "已逾期" : a.due === today() ? "今天到期" : "";
+const statusSelect = (a) => `<select class="act-status s-${a.status}" data-f="status">${Object.entries(ACT_STATUS).filter(([k]) => k !== "pending" || a.status === "pending").map(([k, v]) => `<option value="${k}"${k === a.status ? " selected" : ""}>${v}</option>`).join("")}</select>`;
+
+async function loadActions() {
+  if (!currentId || !current?.transcript) { actions = []; return; }
+  actions = await api(`/api/meetings/${currentId}/actions`).catch(() => []);
+}
+
+function sortActions(list) {
+  return [...list].sort((a, b) => (ACT_ORDER[a.status] - ACT_ORDER[b.status]) || ((a.due || "9999") < (b.due || "9999") ? -1 : (a.due || "9999") > (b.due || "9999") ? 1 : 0) || a.createdAt.localeCompare(b.createdAt));
+}
+
+function actionRow(a, { meeting = null } = {}) {
+  const src = a.source;
+  return `<div class="act-row ${a.status} ${dueClass(a)}" data-aid="${a.id}" data-mid="${meeting ? meeting.id : currentId}">
+    ${statusSelect(a)}
+    <div class="act-main">
+      <div class="act-text" contenteditable="true" spellcheck="false" data-f="text">${escapeHtml(a.text)}</div>
+      <div class="act-sub">
+        <input class="act-owner" data-f="owner" placeholder="负责人" value="${escapeHtml(a.owner || "")}" />
+        <input type="date" class="act-due" data-f="due" value="${a.due || ""}" />
+        ${dueLabel(a) ? `<span class="due-tag">${dueLabel(a)}</span>` : ""}
+        ${a.dueText && !a.due ? `<span class="hint">原话「${escapeHtml(a.dueText)}」</span>` : ""}
+        ${src ? `<button type="button" class="chip act-src" data-t="${src.t}" title="${escapeHtml(src.quote)}">▶ ${fmtTime(src.t)} 原话</button>` : ""}
+        ${meeting ? `<button type="button" class="chip act-meeting" title="${escapeHtml(meeting.title)}">${escapeHtml(meeting.title.slice(0, 16))} · ${fmtDate(meeting.createdAt)}</button>` : ""}
+        ${a.status === "pending" && a.confidence != null ? `<span class="hint">AI 置信 ${Math.round(a.confidence * 100)}%</span>` : ""}
+      </div>
+    </div>
+    <div class="act-ops">
+      ${a.status === "pending" ? `<button type="button" class="primary small act-confirm">确认</button>` : ""}
+      <button type="button" class="ghost small act-del" title="删除">×</button>
+    </div>
+  </div>`;
+}
+
+function renderActions() {
+  const list = sortActions(actions);
+  const pending = list.filter((a) => a.status === "pending");
+  const rest = list.filter((a) => a.status !== "pending");
+  $("#actEmpty").hidden = !!list.length;
+  $("#btnConfirmAll").hidden = !pending.length;
+  $("#btnConfirmAll").textContent = `全部确认(${pending.length})`;
+  $("#btnExtract").disabled = actionsBusy || !current?.transcript;
+  const open = rest.filter((a) => a.status === "todo" || a.status === "doing").length;
+  const done = rest.filter((a) => a.status === "done").length;
+  $("#actHint").textContent = list.length ? `${pending.length ? `${pending.length} 条待确认 · ` : ""}${open} 条未完成 · ${done} 条已完成` : "";
+  $("#actList").innerHTML =
+    (pending.length ? `<div class="act-group"><div class="act-group-title">AI 提取的,等你确认</div>${pending.map((a) => actionRow(a)).join("")}</div>` : "") +
+    (rest.length ? `<div class="act-group">${pending.length ? `<div class="act-group-title">已确认</div>` : ""}${rest.map((a) => actionRow(a)).join("")}</div>` : "");
+}
+
+async function patchActionRow(mid, aid, body) {
+  const updated = await api(`/api/meetings/${mid}/actions/${aid}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const i = actions.findIndex((a) => a.id === aid);
+  if (i >= 0 && mid === currentId) actions[i] = updated;
+  return updated;
+}
+
+// 会议内的行动项面板和全局看板共用一套事件处理
+async function onActionEvent(e, container, rerender) {
+  const row = e.target.closest(".act-row");
+  if (!row) return;
+  const aid = row.dataset.aid, mid = row.dataset.mid;
+  const f = e.target.dataset?.f;
+  try {
+    if (e.type === "change" && f && f !== "text") {
+      await patchActionRow(mid, aid, { [f]: e.target.value });
+      rerender();
+    } else if (e.type === "focusout" && f === "text") {
+      const text = e.target.textContent.trim();
+      const cur = actions.find((a) => a.id === aid);
+      if (text && (!cur || text !== cur.text)) await patchActionRow(mid, aid, { text });
+      else if (!text && cur) e.target.textContent = cur.text;
+    } else if (e.type === "keydown" && f === "text" && e.key === "Enter") {
+      e.preventDefault(); e.target.blur();
+    } else if (e.type === "click") {
+      if (e.target.closest(".act-confirm")) { await patchActionRow(mid, aid, { status: "todo" }); rerender(); }
+      else if (e.target.closest(".act-del")) {
+        if (!(await uiConfirm("删除这条行动项?", { ok: "删除", danger: true }))) return;
+        await api(`/api/meetings/${mid}/actions/${aid}`, { method: "DELETE" });
+        if (mid === currentId) actions = actions.filter((a) => a.id !== aid);
+        rerender();
+      } else if (e.target.closest(".act-src")) {
+        const t = Number(e.target.closest(".act-src").dataset.t);
+        if (mid !== currentId) { boardDlg.close(); activeTab = "actions"; await openMeeting(mid, true); }
+        seek(t);
+        toast("原话:" + (e.target.closest(".act-src").title || ""));
+      } else if (e.target.closest(".act-meeting")) {
+        boardDlg.close(); activeTab = "actions"; await openMeeting(mid, true);
+      }
+    }
+  } catch (err) { uiAlert(err.message, "操作失败"); }
+}
+for (const ev of ["change", "focusout", "keydown", "click"]) {
+  $("#actList").addEventListener(ev, (e) => onActionEvent(e, $("#actList"), () => { renderActions(); renderTabs(); }));
+}
+
+$("#btnExtract").onclick = async () => {
+  if (!current?.transcript || actionsBusy) return;
+  actionsBusy = true;
+  const btn = $("#btnExtract");
+  btn.disabled = true; btn.textContent = "提取中…(约 1 分钟)";
+  try {
+    const r = await api(`/api/meetings/${current.id}/actions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ extract: true }) });
+    actions = r.items;
+    toast(r.added ? `提取到 ${r.added} 条新行动项,请确认` : "没有发现新的行动项");
+  } catch (e) { uiAlert(e.message, "提取失败"); }
+  finally { actionsBusy = false; btn.disabled = false; btn.textContent = "✨ 从逐字稿提取"; renderActions(); renderTabs(); }
+};
+$("#btnConfirmAll").onclick = async () => {
+  actions = await api(`/api/meetings/${current.id}/actions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm: true }) });
+  renderActions(); renderTabs();
+};
+$("#btnAddAction").onclick = async () => {
+  if (!current) return;
+  const a = await api(`/api/meetings/${current.id}/actions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "新任务(点这里改)", owner: "" }) });
+  actions.push(a);
+  renderActions(); renderTabs();
+  const el = $("#actList").querySelector(`[data-aid="${a.id}"] .act-text`);
+  if (el) { el.focus(); document.getSelection()?.selectAllChildren(el); }
+};
+
+// ---------- 全局任务看板 ----------
+const boardDlg = $("#boardDlg");
+let boardItems = [], boardFilter = "open", boardOwner = "";
+async function loadBoard() {
+  boardItems = await api("/api/actions");
+  const owners = [...new Set(boardItems.map((a) => a.owner).filter(Boolean))].sort();
+  const sel = $("#boardOwner");
+  const keep = boardOwner;
+  sel.innerHTML = `<option value="">所有人</option>` + owners.map((o) => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join("");
+  sel.value = owners.includes(keep) ? keep : "";
+  boardOwner = sel.value;
+  renderBoard();
+}
+function renderBoard() {
+  const t = today();
+  const live = boardItems.filter((a) => a.status !== "done" && a.status !== "dropped");
+  const stats = {
+    pending: boardItems.filter((a) => a.status === "pending").length,
+    open: live.filter((a) => a.status !== "pending").length,
+    overdue: live.filter((a) => a.due && a.due < t).length,
+    done: boardItems.filter((a) => a.status === "done").length,
+  };
+  $("#boardStats").innerHTML = [
+    ["待确认", stats.pending, "pending"], ["未完成", stats.open, "open"], ["已逾期", stats.overdue, "overdue"], ["已完成", stats.done, "done"],
+  ].map(([l, n, k]) => `<div class="stat ${k}"><b>${n}</b><span>${l}</span></div>`).join("");
+  let list = boardItems.filter((a) => !boardOwner || a.owner === boardOwner);
+  if (boardFilter === "open") list = list.filter((a) => a.status === "todo" || a.status === "doing");
+  else if (boardFilter === "overdue") list = list.filter((a) => a.due && a.due < t && a.status !== "done" && a.status !== "dropped");
+  else if (boardFilter !== "all") list = list.filter((a) => a.status === boardFilter);
+  list = sortActions(list);
+  $("#boardList").innerHTML = list.length
+    ? list.map((a) => actionRow(a, { meeting: { id: a.meetingId, title: a.meetingTitle, createdAt: a.meetingAt } })).join("")
+    : `<div class="empty small">这个筛选下没有任务。</div>`;
+  $("#boardStatus").querySelectorAll("button").forEach((b) => b.classList.toggle("active", b.dataset.s === boardFilter));
+}
+$("#btnBoard").onclick = async () => { boardDlg.showModal(); $("#boardList").innerHTML = `<div class="empty small">加载中…</div>`; await loadBoard().catch((e) => uiAlert(e.message)); };
+$("#btnCloseBoard").onclick = () => boardDlg.close();
+$("#btnBoardRefresh").onclick = () => loadBoard();
+$("#boardStatus").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { boardFilter = b.dataset.s; renderBoard(); } });
+$("#boardOwner").addEventListener("change", (e) => { boardOwner = e.target.value; renderBoard(); });
+for (const ev of ["change", "focusout", "keydown", "click"]) {
+  $("#boardList").addEventListener(ev, (e) => onActionEvent(e, $("#boardList"), async () => {
+    // 看板里改了状态,重新拉一遍保证各会议的数据一致
+    const r = e.target.closest(".act-row");
+    if (r && e.type === "change") { const u = await api(`/api/meetings/${r.dataset.mid}/actions`).catch(() => null); if (u) boardItems = boardItems.map((a) => a.meetingId === r.dataset.mid ? { ...(u.find((x) => x.id === a.id) || a), meetingId: a.meetingId, meetingTitle: a.meetingTitle, meetingAt: a.meetingAt } : a); }
+    else if (r) boardItems = await api("/api/actions");
+    renderBoard();
+  }));
+}

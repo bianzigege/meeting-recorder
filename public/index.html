@@ -10,6 +10,7 @@
   <header class="topbar">
     <div class="brand">🎙️ 会议录音纪要</div>
     <div class="top-actions">
+      <button id="btnBoard" class="ghost">任务看板</button>
       <button id="btnAsk" class="ghost">问资料库</button>
       <button id="btnGlossary" class="ghost">词库</button>
       <button id="btnTemplates" class="ghost">模板</button>
@@ -139,6 +140,16 @@
           <div id="resultView" class="md"></div>
           <div id="resultEmpty" class="empty small">还没有分析结果。先转写,再勾选模板点「分析所选」。</div>
         </div>
+        <div id="paneActions" class="pane" hidden>
+          <div class="act-tools">
+            <button type="button" class="primary small" id="btnExtract">✨ 从逐字稿提取</button>
+            <button type="button" class="ghost small" id="btnConfirmAll" hidden>全部确认</button>
+            <button type="button" class="ghost small" id="btnAddAction">+ 手动添加</button>
+            <span class="hint" id="actHint"></span>
+          </div>
+          <div id="actList"></div>
+          <div id="actEmpty" class="empty small">还没有行动项。点「从逐字稿提取」,AI 会找出谁要做什么、什么时候,每条都带原话出处;你确认后才算数。</div>
+        </div>
         <div id="paneTranscript" class="pane" hidden>
           <div class="tr-tools">
             <div class="seg-mini" id="trMode">
@@ -181,6 +192,30 @@
         <span class="spacer"></span>
         <button type="button" class="primary" id="btnCloseTrash">关闭</button>
       </div>
+    </div>
+  </dialog>
+
+  <!-- 任务看板:所有会议的行动项 -->
+  <dialog id="boardDlg" class="wide">
+    <div class="settings-form board">
+      <div class="ask-head">
+        <h3>任务看板</h3>
+        <button type="button" class="ghost small" id="btnBoardRefresh">刷新</button>
+      </div>
+      <p class="hint">所有会议里确认过的任务都在这里。改状态、负责人、日期直接生效;点会议名或原话跳回那场会议。</p>
+      <div class="board-stats" id="boardStats"></div>
+      <div class="board-filters">
+        <div class="seg-mini" id="boardStatus">
+          <button type="button" data-s="open" class="active">未完成</button>
+          <button type="button" data-s="overdue">已逾期</button>
+          <button type="button" data-s="pending">待确认</button>
+          <button type="button" data-s="done">已完成</button>
+          <button type="button" data-s="all">全部</button>
+        </div>
+        <select id="boardOwner"><option value="">所有人</option></select>
+      </div>
+      <div id="boardList" class="board-list"></div>
+      <div class="row-end"><button type="button" class="primary" id="btnCloseBoard">关闭</button></div>
     </div>
   </dialog>
 

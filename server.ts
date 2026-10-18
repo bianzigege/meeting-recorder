@@ -1289,6 +1289,163 @@ const ASK_SYSTEM = `你是用户的会议资料库助手。用户是主讲人,�
 - 涉及多场会议时,可以对比不同场次说法的异同,并说明是哪一场。
 - 用 Markdown,简洁直接,不要开场白。`;
 
+// ---------- 行动项(会议变行动) ----------
+// 每场会议一个 actions.json:AI 从逐字稿里提取「谁 / 做什么 / 什么时候」,先进「待确认」,人确认后才算正式任务。
+type ActionStatus = "pending" | "todo" | "doing" | "done" | "dropped";
+type ActionItem = {
+  id: string;
+  text: string; // 做什么
+  owner: string; // 谁,空 = 待定
+  due: string | null; // YYYY-MM-DD,null = 待定
+  dueText?: string; // 原话里的时间表述,如「下周三」「月底前」
+  status: ActionStatus; // pending = AI 提取、还没确认
+  source: { t: number; quote: string } | null; // 来源:逐字稿秒数 + 原话
+  confidence?: number;
+  note?: string;
+  createdAt: string;
+  updatedAt: string;
+  doneAt?: string;
+};
+
+const ACTION_STATUSES: ActionStatus[] = ["pending", "todo", "doing", "done", "dropped"];
+
+function actionsPath(id: string) { return path.join(meetingDir(id), "actions.json"); }
+
+async function readActions(id: string): Promise<ActionItem[]> {
+  try {
+    const list = JSON.parse(await readFile(actionsPath(id), "utf8"));
+    return Array.isArray(list) ? list : [];
+  } catch { return []; }
+}
+
+async function writeActions(id: string, list: ActionItem[]) {
+  await writeFile(actionsPath(id), JSON.stringify(list, null, 2));
+}
+
+const newActionId = () => "a" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+// 「下周三」这类相对时间由模型换算,这里只做兜底校验
+function normalizeDue(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const m = v.trim().match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  if (isNaN(d.getTime())) return null;
+  return `${m[1]}-${String(Number(m[2])).padStart(2, "0")}-${String(Number(m[3])).padStart(2, "0")}`;
+}
+
+function parseTimestamp(v: unknown): number | null {
+  if (typeof v === "number" && isFinite(v)) return Math.max(0, Math.floor(v));
+  const m = String(v ?? "").match(/(\d{1,3}):(\d{2})/);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
+
+const normText = (s: string) => s.replace(/[\s,。,.;;:：、「」『』“”"'()()【】\[\]-]/g, "").toLowerCase();
+
+// 从模型输出里把 JSON 数组抠出来(模型可能包 ```json 围栏或多说两句)
+function extractJsonArray(raw: string): any[] {
+  const cleaned = raw.replace(/```(?:json)?/gi, "").trim();
+  const start = cleaned.indexOf("[");
+  const end = cleaned.lastIndexOf("]");
+  if (start < 0 || end <= start) throw new Error("模型没有返回 JSON 数组:" + cleaned.slice(0, 120));
+  const arr = JSON.parse(cleaned.slice(start, end + 1));
+  if (!Array.isArray(arr)) throw new Error("模型返回的不是数组");
+  return arr;
+}
+
+function meetingDateLine(meta: Meta) {
+  const d = new Date(meta.createdAt);
+  const weekday = "日一二三四五六"[d.getDay()];
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}(周${weekday})`;
+}
+
+const ACTIONS_SYSTEM = `你是会议行动项提取器。从会议逐字稿里找出所有「某人承诺要做的具体事情」,输出一个 JSON 数组,不要输出任何其他文字。
+
+每个元素的字段:
+- "text": 做什么,一句话,动词开头,具体到可以判断做没做(例如「把报价单发给客户」,不要「跟进报价」)
+- "owner": 谁负责。用逐字稿里的说话人名字或被点名的人名;听不出来就写 ""
+- "due": 截止日期,格式 YYYY-MM-DD。「下周三」「月底前」「明天」这类相对时间,按会议日期换算成具体日期;没提到就写 null
+- "due_text": 原话里的时间表述,如「下周三」;没有就写 ""
+- "time": 这件事在逐字稿里出现的时间戳,照抄行首的 mm:ss
+- "quote": 承诺这件事的原话,30 字以内,照抄逐字稿
+- "confidence": 0 到 1,你有多确定这是一个明确的行动项
+
+规则:
+- 只提「要去做的事」,不提已经做完的事、纯讨论、纯结论、泛泛的「以后要注意」
+- 同一件事只出一条,不要拆成多条
+- 一场会通常 3 到 12 条;确实没有就输出 []
+- 人名、品牌名按专有名词表纠正
+- 严格输出 JSON,不要 Markdown 围栏`;
+
+async function extractActions(id: string): Promise<{ added: number; items: ActionItem[] }> {
+  const cfg = await loadConfig();
+  const meta = await readMeta(id);
+  const transcript = (await readTextIfExists(path.join(meetingDir(id), "transcript.txt"))).trim();
+  if (transcript.length < 30) throw new Error("逐字稿内容太少,提不出行动项");
+  const names = [cfg.myName, meta.speakerNames?.mic, meta.speakerNames?.system].filter(Boolean);
+  const prompt = [
+    `会议日期:${meetingDateLine(meta)}。相对时间以此为基准换算。`,
+    names.length ? `已知参会人:${names.join("、")}。` : "",
+    glossaryNote(await loadGlossary()),
+    "",
+    "<transcript>",
+    transcript.slice(0, 60000),
+    "</transcript>",
+  ].filter((l) => l !== undefined).join("\n");
+  const raw = await summarize(cfg, ACTIONS_SYSTEM, prompt, () => {});
+  const arr = extractJsonArray(raw);
+  const existing = await readActions(id);
+  const seen = new Set(existing.map((a) => normText(a.text)));
+  const now = new Date().toISOString();
+  const fresh: ActionItem[] = [];
+  for (const x of arr) {
+    const text = String(x?.text || "").trim();
+    if (!text || seen.has(normText(text))) continue;
+    seen.add(normText(text));
+    const t = parseTimestamp(x?.time);
+    fresh.push({
+      id: newActionId(),
+      text,
+      owner: String(x?.owner || "").trim(),
+      due: normalizeDue(x?.due),
+      dueText: String(x?.due_text || "").trim() || undefined,
+      status: "pending",
+      source: t === null ? null : { t, quote: String(x?.quote || "").trim().slice(0, 80) },
+      confidence: typeof x?.confidence === "number" ? Math.max(0, Math.min(1, x.confidence)) : undefined,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+  const items = existing.concat(fresh);
+  await writeActions(id, items);
+  console.log(`行动项提取:${id} 新增 ${fresh.length} 条(模型返回 ${arr.length} 条)`);
+  return { added: fresh.length, items };
+}
+
+function patchAction(a: ActionItem, body: any): ActionItem {
+  const next = { ...a };
+  if (typeof body.text === "string" && body.text.trim()) next.text = body.text.trim();
+  if (typeof body.owner === "string") next.owner = body.owner.trim();
+  if ("due" in body) next.due = body.due ? normalizeDue(body.due) : null;
+  if (typeof body.note === "string") next.note = body.note.trim() || undefined;
+  if (typeof body.status === "string" && ACTION_STATUSES.includes(body.status as ActionStatus)) {
+    next.status = body.status as ActionStatus;
+    if (next.status === "done" && a.status !== "done") next.doneAt = new Date().toISOString();
+    if (next.status !== "done") next.doneAt = undefined;
+  }
+  next.updatedAt = new Date().toISOString();
+  return next;
+}
+
+// 所有会议的行动项(全局看板用),附上会议标题
+async function listAllActions() {
+  const out: (ActionItem & { meetingId: string; meetingTitle: string; meetingAt: string })[] = [];
+  for (const m of await listMeetings()) {
+    for (const a of await readActions(m.id)) out.push({ ...a, meetingId: m.id, meetingTitle: m.title, meetingAt: m.createdAt });
+  }
+  return out;
+}
+
 type AskTurn = { q: string; a: string };
 
 async function askLibrary(question: string, history: AskTurn[], onEvent: (type: string, data: unknown) => void) {
@@ -1890,6 +2047,10 @@ async function handleApi(req: Request, url: URL): Promise<Response> {
     }
   }
 
+  if (parts[1] === "actions" && method === "GET") {
+    return json(await listAllActions());
+  }
+
   if (parts[1] === "meetings") {
     const id = parts[2];
     const action = parts[3];
@@ -2002,6 +2163,43 @@ async function handleApi(req: Request, url: URL): Promise<Response> {
     if (id && action === "analyze" && method === "POST") {
       const body = await req.json().catch(() => ({}));
       return analyzeMeeting(id, Array.isArray(body.templateIds) ? body.templateIds.map(String) : []);
+    }
+
+    if (id && action === "actions") {
+      const aid = parts[4];
+      if (!aid && method === "GET") return json(await readActions(id));
+      if (!aid && method === "POST") {
+        const body = await req.json().catch(() => ({}));
+        if (body.extract) return json(await extractActions(id));
+        if (body.confirm) {
+          const ids: string[] | null = Array.isArray(body.ids) ? body.ids.map(String) : null;
+          const list = (await readActions(id)).map((a) =>
+            a.status === "pending" && (!ids || ids.includes(a.id)) ? { ...a, status: "todo" as ActionStatus, updatedAt: new Date().toISOString() } : a);
+          await writeActions(id, list);
+          return json(list);
+        }
+        const text = String(body.text || "").trim();
+        if (!text) return json({ error: "缺少任务内容" }, 400);
+        const now = new Date().toISOString();
+        const item: ActionItem = { id: newActionId(), text, owner: String(body.owner || "").trim(), due: normalizeDue(body.due), status: "todo", source: null, createdAt: now, updatedAt: now };
+        const list = (await readActions(id)).concat(item);
+        await writeActions(id, list);
+        return json(item);
+      }
+      if (aid && method === "PATCH") {
+        const body = await req.json();
+        const list = await readActions(id);
+        const i = list.findIndex((a) => a.id === aid);
+        if (i < 0) return json({ error: "没有这条行动项" }, 404);
+        list[i] = patchAction(list[i], body);
+        await writeActions(id, list);
+        return json(list[i]);
+      }
+      if (aid && method === "DELETE") {
+        const list = await readActions(id);
+        await writeActions(id, list.filter((a) => a.id !== aid));
+        return json({ ok: true });
+      }
     }
 
     if (id && action === "transcript" && method === "PUT") {
