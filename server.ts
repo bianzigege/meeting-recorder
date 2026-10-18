@@ -55,6 +55,9 @@ type Config = {
   backupDir: string; // 备份到哪个文件夹,空 = 不备份
   backupScope: string; // text = 只备份文字;audio = 文字 + 音频;all = 全部(含视频)
   voiceMemosSince: string; // 只自动导入这个时间(毫秒)之后录的备忘录
+  autoExtractActions: string; // 转写完自动提取行动项
+  remindEnabled: string; // 每天按时提醒到期 / 逾期的任务(macOS 通知)
+  remindHour: string; // 几点提醒(0-23)
 };
 
 const DEFAULT_SUMMARY_PROMPT = `你是一位专业的会议记录员。根据下面的会议转写文本,输出一份结构化的中文会议纪要,使用 Markdown 格式,包含以下部分:
@@ -101,6 +104,9 @@ function envDefaults(): Config {
     autoTranscribe: "1",
     autoAnalyze: "0",
     autoImportVoiceMemos: "0",
+    autoExtractActions: "1",
+    remindEnabled: "1",
+    remindHour: "9",
     autoTitle: "1",
     discardShort: "1",
     backupDir: "",
@@ -1082,6 +1088,9 @@ async function runQueue() {
           await transcribeMeeting(job.meetingId);
           await autoTitle(job.meetingId).catch((e) => console.error("自动起标题失败:", e?.message || e));
           const cfg = await loadConfig();
+          if (cfg.autoExtractActions === "1") {
+            await extractActions(job.meetingId).catch((e) => console.error("自动提取行动项失败:", e?.message || e));
+          }
           if (cfg.autoAnalyze === "1") {
             const ids = await defaultTemplateIds();
             if (ids.length) enqueue(job.meetingId, "analyze", ids);
@@ -1445,6 +1454,79 @@ async function listAllActions() {
   }
   return out;
 }
+
+// ---------- 到期提醒 ----------
+// 每天到点扫一遍所有未完成任务:逾期、今天到期、明天到期,合成一条 macOS 通知。
+const REMIND_STATE_PATH = path.join(ROOT, "reminders.json");
+const localDate = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const shiftDate = (ymd: string, days: number) => { const [y, m, d] = ymd.split("-").map(Number); return localDate(new Date(y, m - 1, d + days)); };
+
+async function dueDigest() {
+  const t = localDate();
+  const tomorrow = shiftDate(t, 1);
+  const live = (await listAllActions()).filter((a) => (a.status === "todo" || a.status === "doing") && a.due);
+  return {
+    date: t,
+    overdue: live.filter((a) => a.due! < t).sort((a, b) => a.due!.localeCompare(b.due!)),
+    today: live.filter((a) => a.due === t),
+    tomorrow: live.filter((a) => a.due === tomorrow),
+  };
+}
+
+async function notifyMac(title: string, message: string, subtitle = "") {
+  if (process.platform !== "darwin") return false;
+  const esc = (x: string) => x.replace(/\\/g, "\\\\").replace(/"/g, '\\"').slice(0, 200);
+  const script = `display notification "${esc(message)}" with title "${esc(title)}"${subtitle ? ` subtitle "${esc(subtitle)}"` : ""} sound name "default"`;
+  const p = Bun.spawn(["osascript", "-e", script], { stdout: "ignore", stderr: "pipe" });
+  const code = await p.exited;
+  if (code !== 0) console.error("通知失败:", await new Response(p.stderr).text());
+  return code === 0;
+}
+
+function digestMessage(d: Awaited<ReturnType<typeof dueDigest>>) {
+  const line = (a: ActionItem) => `${a.owner || "待定"}:${a.text.slice(0, 18)}`;
+  const parts: string[] = [];
+  if (d.overdue.length) parts.push(`逾期 ${d.overdue.length}`);
+  if (d.today.length) parts.push(`今天 ${d.today.length}`);
+  if (d.tomorrow.length) parts.push(`明天 ${d.tomorrow.length}`);
+  const top = [...d.overdue, ...d.today, ...d.tomorrow].slice(0, 3).map(line).join(";");
+  return { subtitle: parts.join(" · "), message: top || "没有到期的任务" };
+}
+
+async function sendDueReminder(force = false) {
+  const cfg = await loadConfig();
+  const d = await dueDigest();
+  const total = d.overdue.length + d.today.length + d.tomorrow.length;
+  if (!force && !total) return { sent: false, ...d };
+  const { subtitle, message } = digestMessage(d);
+  const sent = await notifyMac("散会即开工 · 任务提醒", message, subtitle);
+  if (sent) {
+    const now = new Date().toISOString();
+    for (const a of [...d.overdue, ...d.today, ...d.tomorrow]) {
+      const list = await readActions(a.meetingId);
+      const i = list.findIndex((x) => x.id === a.id);
+      if (i >= 0) { (list[i] as any).lastRemindedAt = now; await writeActions(a.meetingId, list); }
+    }
+  }
+  void cfg;
+  return { sent, ...d };
+}
+
+async function reminderTick() {
+  const cfg = await loadConfig();
+  if (cfg.remindEnabled !== "1") return;
+  const hour = Math.min(23, Math.max(0, Number(cfg.remindHour) || 9));
+  if (new Date().getHours() < hour) return;
+  let state: { lastDailyRun?: string } = {};
+  try { state = JSON.parse(await readFile(REMIND_STATE_PATH, "utf8")); } catch {}
+  const today = localDate();
+  if (state.lastDailyRun === today) return;
+  const r = await sendDueReminder();
+  await writeFile(REMIND_STATE_PATH, JSON.stringify({ lastDailyRun: today, lastResult: { sent: r.sent, overdue: r.overdue.length, today: r.today.length, tomorrow: r.tomorrow.length } }));
+  console.log(`任务提醒:${r.sent ? "已发送" : "没有到期任务"}(逾期 ${r.overdue.length} / 今天 ${r.today.length} / 明天 ${r.tomorrow.length})`);
+}
+setTimeout(() => reminderTick().catch((e) => console.error("任务提醒失败:", e?.message || e)), 20_000);
+setInterval(() => reminderTick().catch((e) => console.error("任务提醒失败:", e?.message || e)), 10 * 60_000);
 
 type AskTurn = { q: string; a: string };
 
@@ -2049,6 +2131,11 @@ async function handleApi(req: Request, url: URL): Promise<Response> {
 
   if (parts[1] === "actions" && method === "GET") {
     return json(await listAllActions());
+  }
+
+  if (parts[1] === "reminders") {
+    if (method === "GET") return json(await dueDigest());
+    if (method === "POST") return json(await sendDueReminder(true));
   }
 
   if (parts[1] === "meetings") {

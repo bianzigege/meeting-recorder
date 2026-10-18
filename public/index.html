@@ -145,6 +145,7 @@
             <button type="button" class="primary small" id="btnExtract">✨ 从逐字稿提取</button>
             <button type="button" class="ghost small" id="btnConfirmAll" hidden>全部确认</button>
             <button type="button" class="ghost small" id="btnAddAction">+ 手动添加</button>
+            <button type="button" class="ghost small" id="btnClaim">📣 认领消息</button>
             <span class="hint" id="actHint"></span>
           </div>
           <div id="actList"></div>
@@ -216,6 +217,19 @@
       </div>
       <div id="boardList" class="board-list"></div>
       <div class="row-end"><button type="button" class="primary" id="btnCloseBoard">关闭</button></div>
+    </div>
+  </dialog>
+
+  <!-- 认领消息:按负责人分组,复制到群里 -->
+  <dialog id="claimDlg">
+    <div class="settings-form">
+      <h3>认领消息</h3>
+      <p class="hint">按负责人分好组了,复制到微信 / 飞书群里,让每个人认领自己的。只包含已确认的任务。</p>
+      <textarea id="claimText" rows="14" spellcheck="false"></textarea>
+      <div class="row-end">
+        <button type="button" class="ghost" id="btnCloseClaim">关闭</button>
+        <button type="button" class="primary" id="btnCopyClaim">复制</button>
+      </div>
     </div>
   </dialog>
 
@@ -349,7 +363,18 @@
         <label class="check"><input type="checkbox" name="autoAnalyze" /> <span>转写完自动用「默认勾选」的模板分析(会消耗 Claude 额度)</span></label>
         <label class="check"><input type="checkbox" name="autoTitle" /> <span>没起标题的录音,转写完让 Claude 根据内容起一个(用小模型,很省额度)</span></label>
         <label class="check"><input type="checkbox" name="discardShort" /> <span>少于 5 秒的录制当作误触,自动放进「最近删除」</span></label>
+        <label class="check"><input type="checkbox" name="autoExtractActions" /> <span>转写完自动提取行动项(谁 / 做什么 / 什么时候,进「待确认」)</span></label>
         <label class="check"><input type="checkbox" name="autoImportVoiceMemos" /> <span>自动导入新的语音备忘录(只导入打开这个开关之后录的;iPhone 录的要先通过 iCloud 同步到这台 Mac)</span></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>任务提醒</legend>
+        <label class="check"><input type="checkbox" name="remindEnabled" /> <span>每天提醒逾期、今天到期、明天到期的任务(macOS 通知,服务运行时才会发)</span></label>
+        <div class="status-row">
+          <label class="inline-num">提醒时间 <input name="remindHour" type="number" min="0" max="23" step="1" /> 点</label>
+          <button type="button" class="ghost small" id="btnRemindTest">现在发一条看看</button>
+        </div>
+        <div class="hint" id="remindPreview"></div>
       </fieldset>
 
       <fieldset id="backupBox">

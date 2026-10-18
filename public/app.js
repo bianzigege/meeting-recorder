@@ -1195,6 +1195,7 @@ $("#btnSettings").onclick = async () => {
   dlg.showModal();
   checkCli();
   loadBackupState();
+  loadRemindPreview();
 };
 $("#btnCloseSettings").onclick = () => dlg.close();
 
@@ -1462,3 +1463,54 @@ for (const ev of ["change", "focusout", "keydown", "click"]) {
     renderBoard();
   }));
 }
+
+// ---------- 认领消息 ----------
+const claimDlg = $("#claimDlg");
+const fmtDue = (ymd) => ymd ? `${Number(ymd.slice(5, 7))}/${Number(ymd.slice(8, 10))}` : "";
+function buildClaimText() {
+  const list = sortActions(actions.filter((a) => a.status === "todo" || a.status === "doing"));
+  if (!list.length) return "";
+  const groups = new Map();
+  for (const a of list) { const k = a.owner || "待认领"; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(a); }
+  const d = new Date(current.createdAt);
+  const lines = [`📋 「${current.title}」行动项(${d.getMonth() + 1}/${d.getDate()} 会议)`, ""];
+  // 有名字的在前,「待认领」放最后
+  const keys = [...groups.keys()].sort((a, b) => (a === "待认领") - (b === "待认领"));
+  for (const k of keys) {
+    lines.push(k === "待认领" ? "🙋 待认领(谁来接?)" : `@${k}`);
+    groups.get(k).forEach((a, i) => {
+      const due = a.due ? ` · ${fmtDue(a.due)} 前` : a.dueText ? ` · ${a.dueText}` : "";
+      const src = a.source ? `(${fmtTime(a.source.t)} 原话:${a.source.quote.slice(0, 24)})` : "";
+      lines.push(`${i + 1}. ${a.text}${due} ${src}`.trimEnd());
+    });
+    lines.push("");
+  }
+  lines.push("看到请回「收到」,有出入直接在群里说,我来改。");
+  return lines.join("\n");
+}
+$("#btnClaim").onclick = () => {
+  const text = buildClaimText();
+  if (!text) { toast("还没有已确认的任务,先确认几条"); return; }
+  $("#claimText").value = text;
+  claimDlg.showModal();
+};
+$("#btnCloseClaim").onclick = () => claimDlg.close();
+$("#btnCopyClaim").onclick = async () => { await copyText($("#claimText").value); toast("已复制,去群里粘贴"); };
+
+// ---------- 任务提醒(设置里) ----------
+async function loadRemindPreview() {
+  const el = $("#remindPreview");
+  try {
+    const d = await api("/api/reminders");
+    el.textContent = `现在的情况:逾期 ${d.overdue.length} 条 · 今天到期 ${d.today.length} 条 · 明天到期 ${d.tomorrow.length} 条。`;
+  } catch { el.textContent = ""; }
+}
+$("#btnRemindTest").onclick = async () => {
+  const btn = $("#btnRemindTest");
+  btn.disabled = true;
+  try {
+    const r = await api("/api/reminders", { method: "POST" });
+    toast(r.sent ? "已发出一条系统通知,看右上角" : "没发出去,看看系统设置里有没有允许通知");
+  } catch (e) { uiAlert(e.message, "提醒失败"); }
+  finally { btn.disabled = false; }
+};

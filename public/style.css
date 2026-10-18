@@ -331,3 +331,6 @@ button.danger-solid { background: var(--danger); border-color: var(--danger); co
   .act-row { grid-template-columns: 1fr; }
   .board-stats { grid-template-columns: repeat(2, 1fr); }
 }
+.inline-num { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
+.inline-num input { width: 64px; padding: 4px 8px; }
+#claimText { font-family: inherit; font-size: 13.5px; line-height: 1.6; }

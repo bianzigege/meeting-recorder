@@ -6,3 +6,4 @@ config.json
 bin/
 glossary.json
 templates.json
+reminders.json
