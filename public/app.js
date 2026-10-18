@@ -1530,19 +1530,19 @@ function buildClaimText() {
   const groups = new Map();
   for (const a of list) { const k = a.owner || "待认领"; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(a); }
   const d = new Date(current.createdAt);
-  const lines = [`📋 「${current.title}」行动项(${d.getMonth() + 1}/${d.getDate()} 会议)`, ""];
+  const lines = [`📋「${current.title}」行动项（${d.getMonth() + 1}/${d.getDate()} 会议）`, ""];
   // 有名字的在前,「待认领」放最后
   const keys = [...groups.keys()].sort((a, b) => (a === "待认领") - (b === "待认领"));
   for (const k of keys) {
-    lines.push(k === "待认领" ? "🙋 待认领(谁来接?)" : `@${k}`);
+    lines.push(k === "待认领" ? "🙋 待认领（谁来接？）" : `@${k}`);
     groups.get(k).forEach((a, i) => {
       const due = a.due ? ` · ${fmtDue(a.due)} 前` : a.dueText ? ` · ${a.dueText}` : "";
-      const src = a.source ? `(${fmtTime(a.source.t)} 原话:${a.source.quote.slice(0, 24)})` : "";
+      const src = a.source ? `（${fmtTime(a.source.t)} 原话：${a.source.quote.slice(0, 24)}）` : "";
       lines.push(`${i + 1}. ${a.text}${due} ${src}`.trimEnd());
     });
     lines.push("");
   }
-  lines.push("看到请回「收到」,有出入直接在群里说,我来改。");
+  lines.push("看到请回「收到」，有出入直接在群里说，我来改。");
   return lines.join("\n");
 }
 $("#btnClaim").onclick = () => {

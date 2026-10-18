@@ -190,21 +190,21 @@ export function briefingFrom(meetings, all, today) {
   const lastDate = last ? fmtMD(localDate(new Date(last.createdAt))) : "";
   const lastOpen = lastItems.filter((a) => a.status === "todo" || a.status === "doing").length;
   const line = last
-    ? `上次会议(${lastDate})定了 ${lastItems.length} 件事:完成 ${count(lastItems, "done")},未完成 ${lastOpen}${overdue.length ? `,逾期 ${overdue.length}` : ""}`
+    ? `上次会议（${lastDate}）定了 ${lastItems.length} 件事：完成 ${count(lastItems, "done")}，未完成 ${lastOpen}${overdue.length ? `，逾期 ${overdue.length}` : ""}`
     : "还没有记录过行动项";
-  const pendingNote = pendingNewest ? `;最近一场「${newest.title}」还有 ${pendingNewest} 条待确认` : "";
-  const item = (a) => `- ${a.owner || "待定"}:${a.text}${a.due ? `(${fmtMD(a.due)})` : ""}`;
-  const lines = [`📊 会前汇报(${fmtMD(t)})`, ""];
-  if (pendingNewest) lines.push(`最近一场「${newest.title}」刚转写完,有 ${pendingNewest} 条行动项等你确认。`, "");
+  const pendingNote = pendingNewest ? `；最近一场「${newest.title}」还有 ${pendingNewest} 条待确认` : "";
+  const item = (a) => `- ${a.owner || "待定"}：${a.text}${a.due ? `（${fmtMD(a.due)}）` : ""}`;
+  const lines = [`📊 会前汇报（${fmtMD(t)}）`, ""];
+  if (pendingNewest) lines.push(`最近一场「${newest.title}」刚转写完，有 ${pendingNewest} 条行动项等你确认。`, "");
   if (last) {
-    lines.push(`上次会议「${last.title}」(${lastDate})定了 ${lastItems.length} 件事:完成 ${count(lastItems, "done")} · 进行中 ${count(lastItems, "doing")} · 待办 ${count(lastItems, "todo")}${count(lastItems, "dropped") ? ` · 搁置 ${count(lastItems, "dropped")}` : ""}`, "");
+    lines.push(`上次会议「${last.title}」（${lastDate}）定了 ${lastItems.length} 件事：完成 ${count(lastItems, "done")} · 进行中 ${count(lastItems, "doing")} · 待办 ${count(lastItems, "todo")}${count(lastItems, "dropped") ? ` · 搁置 ${count(lastItems, "dropped")}` : ""}`, "");
   }
   if (overdue.length) lines.push("⚠️ 已逾期", ...overdue.map(item), "");
   if (dueSoon.length) lines.push("🔜 今明两天到期", ...dueSoon.map(item), "");
   const rest = live.filter((a) => !overdue.includes(a) && !dueSoon.includes(a));
-  if (rest.length) lines.push("📝 其他未完成", ...rest.slice(0, 15).map(item), rest.length > 15 ? `…还有 ${rest.length - 15} 条,看任务看板` : "", "");
+  if (rest.length) lines.push("📝 其他未完成", ...rest.slice(0, 15).map(item), rest.length > 15 ? `…还有 ${rest.length - 15} 条，看任务看板` : "", "");
   if (!live.length) lines.push("所有任务都完成了 🎉", "");
-  lines.push("开会先对一遍这些,再聊新的。");
+  lines.push("开会先对一遍这些，再聊新的。");
   return {
     lastMeeting: last ? { id: last.id, title: last.title, createdAt: last.createdAt } : null,
     counts: { last: lastItems.length, lastDone: count(lastItems, "done"), lastOpen, open: live.length, overdue: overdue.length, dueSoon: dueSoon.length },

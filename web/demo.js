@@ -240,25 +240,25 @@
     banner.className = "demo-banner";
     banner.innerHTML = `
       <div class="demo-banner-text">
-        <b>网页演示版</b>:放了同一个项目连着开的三场示例会议,时间设定在 2026 年 10 月 27 日。你做的改动只存在自己的浏览器里。录音和转写在 Mac 版里完成。
+        <b>网页演示版</b>：放了同一个项目连着开的三场示例会议，时间设定在 2026 年 10 月 27 日。你做的改动只存在自己的浏览器里。录音和转写在 Mac 版里完成。
       </div>
       <ol class="demo-steps">
-        <li>打开的是第三场会议的「行动项」:蓝框是 AI 发现的旧任务进展,点「标记完成」;黄框是这场新提取的任务,点「确认」。</li>
-        <li>点顶部「任务看板」,看所有会议的任务、谁逾期了。</li>
-        <li>点「问资料库」,问一句「小林手上还有什么没做完?」。</li>
-        <li>点「复制会前汇报」,看下次开会前发到群里的汇报。</li>
+        <li>打开的是第三场会议的「行动项」：蓝框是 AI 发现的旧任务进展，点「标记完成」；黄框是这场新提取的任务，点「确认」。</li>
+        <li>点顶部「任务看板」，看所有会议的任务、谁逾期了。</li>
+        <li>点「问资料库」，问一句「小林手上还有什么没做完？」</li>
+        <li>点「复制会前汇报」，看下次开会前发到群里的汇报。</li>
       </ol>
       <div class="demo-banner-ops"><button type="button" class="ghost small" id="demoReset">重置演示</button></div>`;
     document.querySelector(".topbar").after(banner);
     banner.querySelector("#demoReset").onclick = () => { try { localStorage.removeItem(KEY); } catch {} location.reload(); };
 
     const askHint = document.querySelector("#askDlg .hint");
-    if (askHint) askHint.textContent = "问题交给 MOI 上的智能体「散会即开工助手」:它绑定了这三场会议的知识库,先检索再回答,通常要半分钟到 1 分钟。回答里的出处可以点,直接跳到那场会议的那一句。";
+    if (askHint) askHint.textContent = "问题交给 MOI 上的智能体「散会即开工助手」：它绑定了这三场会议的知识库，先检索再回答，通常要半分钟到 1 分钟。回答里的出处可以点，直接跳到那场会议的那一句。";
     const rec = document.querySelector(".card.recorder");
     if (rec) {
       const intro = document.createElement("div");
       intro.className = "demo-intro";
-      intro.innerHTML = `<b>Mac 版在这里录会</b><br />会议软件一开麦就提醒你录,录音分成你和对方两条声音,在本机离线转成文字,录音不出电脑。散会后自动提取行动项。`;
+      intro.innerHTML = `<b>Mac 版在这里录会</b><br />会议软件一开麦就提醒你录，录音分成你和对方两条声音，在本机离线转成文字，录音不出电脑。散会后自动提取行动项。`;
       rec.prepend(intro);
     }
   });
