@@ -1090,6 +1090,7 @@ async function runQueue() {
           const cfg = await loadConfig();
           if (cfg.autoExtractActions === "1") {
             await extractActions(job.meetingId).catch((e) => console.error("自动提取行动项失败:", e?.message || e));
+            await reviewActions(job.meetingId).catch((e) => console.error("旧任务对照失败:", e?.message || e));
           }
           if (cfg.autoAnalyze === "1") {
             const ids = await defaultTemplateIds();
@@ -1453,6 +1454,121 @@ async function listAllActions() {
     for (const a of await readActions(m.id)) out.push({ ...a, meetingId: m.id, meetingTitle: m.title, meetingAt: m.createdAt });
   }
   return out;
+}
+
+// ---------- 会前汇报 ----------
+// 开会前看一眼:上次会议定的事做完几件、谁逾期了。给网页卡片、菜单栏「要录吗」面板和复制到群里用。
+async function briefing() {
+  const meetings = await listMeetings();
+  const all = await listAllActions();
+  const t = localDate();
+  const withActions = meetings.filter((m) => all.some((a) => a.meetingId === m.id));
+  const last = withActions[0] || null;
+  const lastItems = last ? all.filter((a) => a.meetingId === last.id) : [];
+  const count = (list: typeof all, st: ActionStatus) => list.filter((a) => a.status === st).length;
+  const live = all.filter((a) => a.status === "todo" || a.status === "doing");
+  const overdue = live.filter((a) => a.due && a.due < t);
+  const dueSoon = live.filter((a) => a.due && a.due >= t && a.due <= shiftDate(t, 1));
+  const fmtD = (ymd: string) => `${Number(ymd.slice(5, 7))}/${Number(ymd.slice(8, 10))}`;
+  const lastDate = last ? fmtD(localDate(new Date(last.createdAt))) : "";
+  const lastOpen = lastItems.filter((a) => a.status === "todo" || a.status === "doing").length;
+  const line = last
+    ? `上次会议(${lastDate})定了 ${lastItems.filter((a) => a.status !== "pending").length} 件事:完成 ${count(lastItems, "done")},未完成 ${lastOpen}${overdue.length ? `,逾期 ${overdue.length}` : ""}`
+    : "还没有记录过行动项";
+  const item = (a: (typeof all)[number]) => `- ${a.owner || "待定"}:${a.text}${a.due ? `(${fmtD(a.due)})` : ""}`;
+  const lines = [`📊 会前汇报(${fmtD(t)})`, ""];
+  if (last) {
+    lines.push(`上次会议「${last.title}」(${lastDate})定了 ${lastItems.filter((a) => a.status !== "pending").length} 件事:完成 ${count(lastItems, "done")} · 进行中 ${count(lastItems, "doing")} · 待办 ${count(lastItems, "todo")}${count(lastItems, "dropped") ? ` · 搁置 ${count(lastItems, "dropped")}` : ""}`, "");
+  }
+  if (overdue.length) lines.push("⚠️ 已逾期", ...overdue.map(item), "");
+  if (dueSoon.length) lines.push("🔜 今明两天到期", ...dueSoon.map(item), "");
+  const rest = live.filter((a) => !overdue.includes(a) && !dueSoon.includes(a));
+  if (rest.length) lines.push("📝 其他未完成", ...rest.slice(0, 15).map(item), rest.length > 15 ? `…还有 ${rest.length - 15} 条,看任务看板` : "", "");
+  if (!live.length) lines.push("所有任务都完成了 🎉", "");
+  lines.push("开会先对一遍这些,再聊新的。");
+  return {
+    lastMeeting: last ? { id: last.id, title: last.title, createdAt: last.createdAt } : null,
+    counts: { last: lastItems.filter((a) => a.status !== "pending").length, lastDone: count(lastItems, "done"), lastOpen, open: live.length, overdue: overdue.length, dueSoon: dueSoon.length },
+    line,
+    text: lines.filter((l) => l !== "" || true).join("\n").replace(/\n{3,}/g, "\n\n"),
+  };
+}
+
+// ---------- 旧任务完成识别 ----------
+// 新会议转写完,把之前没完成的任务拿去和逐字稿对一遍:谁说「那个弄完了」,就标成完成候选,人确认后才改状态。
+type Review = {
+  actionId: string; meetingId: string; // 任务属于哪场会议
+  text: string; owner: string;
+  suggested: "done" | "doing" | "dropped";
+  t: number | null; quote: string; confidence?: number;
+  resolved?: "accepted" | "ignored";
+  createdAt: string;
+};
+function reviewsPath(id: string) { return path.join(meetingDir(id), "reviews.json"); }
+async function readReviews(id: string): Promise<Review[]> {
+  try { const l = JSON.parse(await readFile(reviewsPath(id), "utf8")); return Array.isArray(l) ? l : []; } catch { return []; }
+}
+async function writeReviews(id: string, list: Review[]) { await writeFile(reviewsPath(id), JSON.stringify(list, null, 2)); }
+
+const REVIEW_SYSTEM = `你是会议任务跟踪员。下面有一份「之前会议定下、还没完成的任务清单」和一份「新会议的逐字稿」。
+找出逐字稿里提到了清单中哪些任务的进展,输出 JSON 数组,不要输出其他文字。只输出确实被提到的任务,没提到的不要出现。
+
+每个元素:
+- "id": 清单里的任务 id,照抄
+- "status": "done"(说做完了 / 已经发了 / 搞定了)、"doing"(说在做、有进展但没完)、"dropped"(说不做了 / 取消 / 不用了)
+- "time": 逐字稿里提到的位置,照抄行首的 mm:ss
+- "quote": 原话,30 字以内,照抄
+- "confidence": 0 到 1
+
+规则:只依据原话,不要推测;同一任务只出一条;严格输出 JSON,不要 Markdown 围栏。`;
+
+async function reviewActions(id: string): Promise<{ added: number; reviews: Review[] }> {
+  const cfg = await loadConfig();
+  const transcript = (await readTextIfExists(path.join(meetingDir(id), "transcript.txt"))).trim();
+  if (transcript.length < 30) throw new Error("逐字稿内容太少");
+  const open = (await listAllActions())
+    .filter((a) => a.meetingId !== id && (a.status === "todo" || a.status === "doing"))
+    .sort((a, b) => b.meetingAt.localeCompare(a.meetingAt))
+    .slice(0, 40);
+  if (!open.length) return { added: 0, reviews: await readReviews(id) };
+  const fmtD = (iso: string) => { const d = new Date(iso); return `${d.getMonth() + 1}/${d.getDate()}`; };
+  const listText = open.map((a) => `- id=${a.id} | ${a.owner || "待定"} | ${a.text}${a.due ? ` | 截止 ${a.due}` : ""} | 来自 ${fmtD(a.meetingAt)}「${a.meetingTitle}」`).join("\n");
+  const prompt = `${glossaryNote(await loadGlossary())}\n\n<open_tasks>\n${listText}\n</open_tasks>\n\n<transcript>\n${transcript.slice(0, 60000)}\n</transcript>`;
+  const raw = await summarize(cfg, REVIEW_SYSTEM, prompt, () => {});
+  const arr = extractJsonArray(raw);
+  const existing = await readReviews(id);
+  const seen = new Set(existing.map((r) => r.actionId));
+  const byId = new Map(open.map((a) => [a.id, a]));
+  const now = new Date().toISOString();
+  const fresh: Review[] = [];
+  for (const x of arr) {
+    const a = byId.get(String(x?.id || ""));
+    const st = String(x?.status || "");
+    if (!a || seen.has(a.id) || !["done", "doing", "dropped"].includes(st)) continue;
+    seen.add(a.id);
+    fresh.push({ actionId: a.id, meetingId: a.meetingId, text: a.text, owner: a.owner, suggested: st as Review["suggested"], t: parseTimestamp(x?.time), quote: String(x?.quote || "").trim().slice(0, 80), confidence: typeof x?.confidence === "number" ? x.confidence : undefined, createdAt: now });
+  }
+  const reviews = existing.concat(fresh);
+  await writeReviews(id, reviews);
+  console.log(`旧任务对照:${id} 对照 ${open.length} 条,提到 ${fresh.length} 条`);
+  return { added: fresh.length, reviews };
+}
+
+async function resolveReview(id: string, actionId: string, accept: boolean, newMeetingTitle: string) {
+  const reviews = await readReviews(id);
+  const r = reviews.find((x) => x.actionId === actionId);
+  if (!r) throw new Error("没有这条候选");
+  if (accept) {
+    const list = await readActions(r.meetingId);
+    const i = list.findIndex((a) => a.id === actionId);
+    if (i >= 0) {
+      list[i] = patchAction(list[i], { status: r.suggested, note: `在「${newMeetingTitle}」里提到:${r.quote}` });
+      await writeActions(r.meetingId, list);
+    }
+  }
+  r.resolved = accept ? "accepted" : "ignored";
+  await writeReviews(id, reviews);
+  return reviews;
 }
 
 // ---------- 到期提醒 ----------
@@ -2133,6 +2249,10 @@ async function handleApi(req: Request, url: URL): Promise<Response> {
     return json(await listAllActions());
   }
 
+  if (parts[1] === "briefing" && method === "GET") {
+    return json(await briefing());
+  }
+
   if (parts[1] === "reminders") {
     if (method === "GET") return json(await dueDigest());
     if (method === "POST") return json(await sendDueReminder(true));
@@ -2286,6 +2406,17 @@ async function handleApi(req: Request, url: URL): Promise<Response> {
         const list = await readActions(id);
         await writeActions(id, list.filter((a) => a.id !== aid));
         return json({ ok: true });
+      }
+    }
+
+    if (id && action === "reviews") {
+      const aid = parts[4];
+      if (!aid && method === "GET") return json(await readReviews(id));
+      if (!aid && method === "POST") return json(await reviewActions(id));
+      if (aid && method === "POST") {
+        const body = await req.json().catch(() => ({}));
+        const meta = await readMeta(id);
+        return json(await resolveReview(id, aid, !!body.accept, meta.title));
       }
     }
 

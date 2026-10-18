@@ -327,6 +327,18 @@ final class Reminder {
     }
 }
 
+// 开会提醒的文案:先问服务「上次会议定的事做完几件」,拿到就加在前面
+func meetingPromptText(_ done: @escaping (String) -> Void) {
+    let base = "要录下来吗?录完会自动转写成逐字稿。"
+    api("GET", "/api/briefing", timeout: 1.5) { obj, _ in
+        if let line = obj?["line"] as? String, !line.isEmpty, obj?["lastMeeting"] != nil, !(obj?["lastMeeting"] is NSNull) {
+            done("📊 " + line + "\n" + base)
+        } else {
+            done(base)
+        }
+    }
+}
+
 // ---------- 主控 ----------
 final class Controller: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var item: NSStatusItem!
@@ -368,9 +380,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSMenuDelegate {
         log("菜单栏已启动 PATH=\(userPATH)")
         // 调试用:启动时弹一次提醒,看样式
         if CommandLine.arguments.contains("--demo-reminder") {
-            Reminder.show(title: "腾讯会议 好像在开会", text: "要录下来吗?录完会自动转写成逐字稿。", buttons: [
-                ("录屏 + 声音", {}), ("仅声音", {}), ("不用", {}),
-            ], timeout: 15)
+            Server.ensure { _ in
+                meetingPromptText { text in
+                    Reminder.show(title: "腾讯会议 好像在开会", text: text, buttons: [
+                        ("录屏 + 声音", {}), ("仅声音", {}), ("不用", {}),
+                    ], timeout: 15)
+                }
+            }
         }
     }
 
@@ -505,11 +521,14 @@ final class Controller: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard remindEnabled, !Reminder.isShown,
                   let n = using.first(where: { now.timeIntervalSince(activeSince[$0] ?? now) >= 4 && !reminded.contains($0) }) else { return }
             reminded.insert(n)
-            Reminder.show(title: "\(n) 好像在开会", text: "要录下来吗?录完会自动转写成逐字稿。", buttons: [
-                ("录屏 + 声音", { self.startRecording(mode: "both", app: n) }),
-                ("仅声音", { self.startRecording(mode: "audio", app: n) }),
-                ("不用", {}),
-            ])
+            meetingPromptText { text in
+                guard !Reminder.isShown else { return }
+                Reminder.show(title: "\(n) 好像在开会", text: text, buttons: [
+                    ("录屏 + 声音", { self.startRecording(mode: "both", app: n) }),
+                    ("仅声音", { self.startRecording(mode: "audio", app: n) }),
+                    ("不用", {}),
+                ])
+            }
             return
         }
 

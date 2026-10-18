@@ -54,6 +54,13 @@
           <span id="timer" class="timer">00:00</span>
         </div>
         <div class="hint" id="recHint">录制时菜单栏会显示计时。快捷键:⌃⌥⌘P 暂停 / ⌃⌥⌘M 打点 / ⌃⌥⌘S 停止。</div>
+        <div class="brief" id="briefCard" hidden>
+          <div class="brief-line">📊 <span id="briefLine"></span></div>
+          <div class="brief-ops">
+            <button type="button" class="ghost small" id="btnBriefBoard">看板</button>
+            <button type="button" class="ghost small" id="btnBriefCopy">复制会前汇报</button>
+          </div>
+        </div>
         <div class="divider">或</div>
         <div class="import-row">
           <label class="upload">
@@ -146,8 +153,10 @@
             <button type="button" class="ghost small" id="btnConfirmAll" hidden>全部确认</button>
             <button type="button" class="ghost small" id="btnAddAction">+ 手动添加</button>
             <button type="button" class="ghost small" id="btnClaim">📣 认领消息</button>
+            <button type="button" class="ghost small" id="btnReview" title="把之前没完成的任务和这场会的逐字稿对一遍,看哪些被说做完了">🔁 对照旧任务</button>
             <span class="hint" id="actHint"></span>
           </div>
+          <div id="reviewList"></div>
           <div id="actList"></div>
           <div id="actEmpty" class="empty small">还没有行动项。点「从逐字稿提取」,AI 会找出谁要做什么、什么时候,每条都带原话出处;你确认后才算数。</div>
         </div>
@@ -201,7 +210,10 @@
     <div class="settings-form board">
       <div class="ask-head">
         <h3>任务看板</h3>
-        <button type="button" class="ghost small" id="btnBoardRefresh">刷新</button>
+        <div>
+          <button type="button" class="ghost small" id="btnBoardBrief">📣 会前汇报</button>
+          <button type="button" class="ghost small" id="btnBoardRefresh">刷新</button>
+        </div>
       </div>
       <p class="hint">所有会议里确认过的任务都在这里。改状态、负责人、日期直接生效;点会议名或原话跳回那场会议。</p>
       <div class="board-stats" id="boardStats"></div>
@@ -223,8 +235,8 @@
   <!-- 认领消息:按负责人分组,复制到群里 -->
   <dialog id="claimDlg">
     <div class="settings-form">
-      <h3>认领消息</h3>
-      <p class="hint">按负责人分好组了,复制到微信 / 飞书群里,让每个人认领自己的。只包含已确认的任务。</p>
+      <h3 id="claimTitle">认领消息</h3>
+      <p class="hint" id="claimHint">按负责人分好组了,复制到微信 / 飞书群里,让每个人认领自己的。只包含已确认的任务。</p>
       <textarea id="claimText" rows="14" spellcheck="false"></textarea>
       <div class="row-end">
         <button type="button" class="ghost" id="btnCloseClaim">关闭</button>

@@ -270,6 +270,7 @@ function statusText(m) {
 }
 let meetings = [], listPoll = null;
 async function loadList() {
+  loadBriefing();
   meetings = await api("/api/meetings");
   const ul = $("#list");
   ul.innerHTML = "";
@@ -1295,9 +1296,13 @@ const dueClass = (a) => (!a.due || a.status === "done" || a.status === "dropped"
 const dueLabel = (a) => !a.due ? "" : a.due < today() && a.status !== "done" && a.status !== "dropped" ? "已逾期" : a.due === today() ? "今天到期" : "";
 const statusSelect = (a) => `<select class="act-status s-${a.status}" data-f="status">${Object.entries(ACT_STATUS).filter(([k]) => k !== "pending" || a.status === "pending").map(([k, v]) => `<option value="${k}"${k === a.status ? " selected" : ""}>${v}</option>`).join("")}</select>`;
 
+let reviews = [];
 async function loadActions() {
-  if (!currentId || !current?.transcript) { actions = []; return; }
-  actions = await api(`/api/meetings/${currentId}/actions`).catch(() => []);
+  if (!currentId || !current?.transcript) { actions = []; reviews = []; return; }
+  [actions, reviews] = await Promise.all([
+    api(`/api/meetings/${currentId}/actions`).catch(() => []),
+    api(`/api/meetings/${currentId}/reviews`).catch(() => []),
+  ]);
 }
 
 function sortActions(list) {
@@ -1327,7 +1332,55 @@ function actionRow(a, { meeting = null } = {}) {
   </div>`;
 }
 
+const REV_LABEL = { done: "说做完了", doing: "说有进展", dropped: "说不做了" };
+function renderReviews() {
+  const open = reviews.filter((r) => !r.resolved);
+  $("#reviewList").innerHTML = open.length ? `<div class="act-group">
+    <div class="act-group-title">之前定的事,这场会里提到了 · 确认后会改掉原任务的状态</div>
+    ${open.map((r) => `<div class="rev-row ${r.suggested}" data-aid="${r.actionId}">
+      <span class="rev-tag">${REV_LABEL[r.suggested]}</span>
+      <div class="act-main">
+        <div class="act-text">${escapeHtml(r.text)}</div>
+        <div class="act-sub">
+          <span class="hint">${escapeHtml(r.owner || "待定")}</span>
+          ${r.t != null ? `<button type="button" class="chip act-src" data-t="${r.t}" title="${escapeHtml(r.quote)}">▶ ${fmtTime(r.t)} 原话</button>` : ""}
+          <span class="hint">「${escapeHtml(r.quote)}」</span>
+        </div>
+      </div>
+      <div class="act-ops">
+        <button type="button" class="primary small rev-accept">${r.suggested === "done" ? "标记完成" : r.suggested === "doing" ? "改为进行中" : "标记搁置"}</button>
+        <button type="button" class="ghost small rev-ignore">忽略</button>
+      </div>
+    </div>`).join("")}
+  </div>` : "";
+}
+$("#reviewList").addEventListener("click", async (e) => {
+  const row = e.target.closest(".rev-row");
+  if (!row) return;
+  const aid = row.dataset.aid;
+  try {
+    if (e.target.closest(".act-src")) { seek(Number(e.target.closest(".act-src").dataset.t)); return; }
+    const accept = !!e.target.closest(".rev-accept");
+    if (!accept && !e.target.closest(".rev-ignore")) return;
+    reviews = await api(`/api/meetings/${currentId}/reviews/${aid}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accept }) });
+    renderReviews();
+    if (accept) { toast("已更新原任务"); loadBriefing(); }
+  } catch (err) { uiAlert(err.message, "操作失败"); }
+});
+$("#btnReview").onclick = async () => {
+  if (!current?.transcript) return;
+  const btn = $("#btnReview");
+  btn.disabled = true; btn.textContent = "对照中…";
+  try {
+    const r = await api(`/api/meetings/${current.id}/reviews`, { method: "POST" });
+    reviews = r.reviews;
+    toast(r.added ? `发现 ${r.added} 条旧任务在这场会里被提到` : "没发现旧任务的进展");
+  } catch (e) { uiAlert(e.message, "对照失败"); }
+  finally { btn.disabled = false; btn.textContent = "🔁 对照旧任务"; renderReviews(); }
+};
+
 function renderActions() {
+  renderReviews();
   const list = sortActions(actions);
   const pending = list.filter((a) => a.status === "pending");
   const rest = list.filter((a) => a.status !== "pending");
@@ -1514,3 +1567,27 @@ $("#btnRemindTest").onclick = async () => {
   } catch (e) { uiAlert(e.message, "提醒失败"); }
   finally { btn.disabled = false; }
 };
+
+// ---------- 会前汇报 ----------
+let briefCache = null;
+async function loadBriefing() {
+  try {
+    briefCache = await api("/api/briefing");
+    const c = briefCache.counts;
+    $("#briefCard").hidden = !briefCache.lastMeeting;
+    $("#briefLine").textContent = briefCache.line;
+    $("#briefCard").classList.toggle("warn", c.overdue > 0);
+  } catch { $("#briefCard").hidden = true; }
+}
+function showBriefing() {
+  if (!briefCache) return;
+  $("#claimTitle").textContent = "会前汇报";
+  $("#claimHint").textContent = "开会前发到群里,或者自己看一眼:上次定的事做完几件、谁逾期了。";
+  $("#claimText").value = briefCache.text;
+  claimDlg.showModal();
+}
+$("#btnBriefCopy").onclick = async () => { await loadBriefing(); showBriefing(); };
+$("#btnBoardBrief").onclick = async () => { await loadBriefing(); showBriefing(); };
+$("#btnBriefBoard").onclick = () => $("#btnBoard").click();
+$("#btnClaim").addEventListener("click", () => { $("#claimTitle").textContent = "认领消息"; $("#claimHint").textContent = "按负责人分好组了,复制到微信 / 飞书群里,让每个人认领自己的。只包含已确认的任务。"; });
+loadBriefing();
