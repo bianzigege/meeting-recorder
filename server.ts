@@ -1430,12 +1430,13 @@ async function notifyMac(title: string, message: string, subtitle = "") {
 }
 
 function digestMessage(d: Awaited<ReturnType<typeof dueDigest>>) {
-  const line = (a: ActionItem) => `${a.owner || "待定"}:${a.text.slice(0, 18)}`;
+  const clip = (s: string, n = 18) => (s.length > n ? s.slice(0, n - 1) + "…" : s); // 截断时补省略号,不然像字断了
+  const line = (a: ActionItem) => `${a.owner || "待定"}：${clip(a.text)}`;
   const parts: string[] = [];
   if (d.overdue.length) parts.push(`逾期 ${d.overdue.length}`);
   if (d.today.length) parts.push(`今天 ${d.today.length}`);
   if (d.tomorrow.length) parts.push(`明天 ${d.tomorrow.length}`);
-  const top = [...d.overdue, ...d.today, ...d.tomorrow].slice(0, 3).map(line).join(";");
+  const top = [...d.overdue, ...d.today, ...d.tomorrow].slice(0, 3).map(line).join("；");
   return { subtitle: parts.join(" · "), message: top || "没有到期的任务" };
 }
 

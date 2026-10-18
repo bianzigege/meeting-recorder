@@ -2,7 +2,7 @@
 // 画面节奏按帧数算(每帧固定 1/30 秒),截图慢也不影响成片速度;只有等 AI 回答这类真实等待按真实时间截、再加速。
 // 画面里的光标和点击光圈是注入页面的元素;弹窗(top layer)打开时光标会挪进弹窗,不会被挡住。
 import { Page, sleep } from "./cdp.ts";
-import { mkdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync, existsSync, symlinkSync } from "node:fs";
 import path from "node:path";
 
 export const W = 1280, H = 720, DPR = 1.5; // 截出来正好 1920×1080
@@ -169,15 +169,22 @@ export class Rec {
   // 合成 mp4,右上角叠「示例数据」角标,再叠其他图片
   async save(badge = path.join(this.outDir, "字卡", "角标-示例数据.png")) {
     await this.p.close();
-    const list = this.frames.map((f) => `file '${f.file}'\nduration ${f.dur.toFixed(4)}`).join("\n") + `\nfile '${this.frames.at(-1)!.file}'\n`;
-    const listFile = path.join(this.dir, "list.txt");
-    writeFileSync(listFile, list);
+    // 按 30 帧展开成图片序列(软链接,每张截图按时长重复几帧)。不用 concat 的 duration:它把时间取整到 1/25 秒,短帧多的镜头会被拉长
+    const seq = path.join(this.dir, "seq");
+    rmSync(seq, { recursive: true, force: true });
+    mkdirSync(seq);
+    let k = 0, t = 0;
+    for (const f of this.frames) {
+      t += f.dur;
+      const end = Math.max(k + 1, Math.round(t * FPS)); // 按累计时间取整,误差不累积
+      for (; k < end; k++) symlinkSync(f.file, path.join(seq, `${String(k).padStart(6, "0")}.jpg`));
+    }
     mkdirSync(path.join(this.outDir, "录屏"), { recursive: true });
     const out = path.join(this.outDir, "录屏", `${this.name}.mp4`);
-    // 第一步:按固定 30 帧合成底片(直接加滤镜会被图片时间戳取整搞乱节奏)
+    // 第一步:按固定 30 帧合成底片
     const base = path.join(this.dir, "base.mp4");
     const run = (args: string[]) => { const pr = Bun.spawnSync(["ffmpeg", "-y", "-loglevel", "error", ...args]); if (pr.exitCode !== 0) throw new Error("ffmpeg 失败:" + pr.stderr.toString().slice(-400)); };
-    run(["-f", "concat", "-safe", "0", "-i", listFile, "-fps_mode", "cfr", "-r", "30", "-vf", "scale=1920:1080:flags=lanczos", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-preset", "medium", "-crf", "16", base]);
+    run(["-framerate", String(FPS), "-i", path.join(seq, "%06d.jpg"), "-vf", "scale=1920:1080:flags=lanczos", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-preset", "medium", "-crf", "16", base]);
     // 第二步:叠角标和字卡
     const layers = [...(existsSync(badge) ? [{ png: badge, start: 0, end: 1e9, x: "W-w-24", y: "20" }] : []), ...this.overlays];
     const args = ["-i", base];

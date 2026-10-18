@@ -14,7 +14,7 @@ const TMP = "/tmp/sanhui-roughcut";
 mkdirSync(OUT, { recursive: true }); mkdirSync(TMP, { recursive: true }); mkdirSync(path.join(OUT, "旁白-TTS"), { recursive: true });
 const EDGE = `${process.env.HOME}/Desktop/泰语学习/bianzi-thai/.venv/bin/edge-tts`;
 const VOICE = "zh-CN-YunyangNeural", RATE = "+10%";
-const VER = process.env.VER || "v2"; // 粗剪版本号,写进输出文件名
+const VER = process.env.VER || "v3"; // 粗剪版本号,写进输出文件名
 const LEAD = 0.3, TAIL = 0.45; // 旁白在镜头开始后 0.3 秒进;念完至少留 0.45 秒
 
 const run = (args: string[]) => { const r = Bun.spawnSync(args); if (r.exitCode) throw new Error(args.slice(0, 3).join(" ") + " 失败:" + r.stderr.toString().slice(-500)); return r.stdout.toString(); };
@@ -40,6 +40,24 @@ const MINE = (n: number) => {
   return v;
 };
 const P = (n: number) => MINE(n) || path.join(TMP, `占位-镜${n}.mp4`);
+// 第 11 镜:设置里的任务提醒录屏打底,你截的真通知(你录的/镜11-通知.png)在旁白说到「弹通知」时从右边滑进来
+// 录屏期间 macOS 不显示通知横幅,只能这样拼;合成结果另存一份到 录屏/,方便你在剪辑软件里直接用
+function shot11(): string {
+  const mine = MINE(11), base = R("镜11-任务提醒"), note = path.join(SRC, "你录的", "镜11-通知.png");
+  if (mine) return mine;
+  if (!existsSync(base)) return P(11);
+  if (!existsSync(note)) return base;
+  const out = R("镜11-任务提醒-加通知");
+  const T0 = 2.6, D = 0.45, RAD = 12; // 第 2.6 秒滑入,0.45 秒到位;截图圆角半径(截图像素)
+  const round = `geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='if(gt(abs(W/2-X),W/2-${RAD})*gt(abs(H/2-Y),H/2-${RAD}),if(lte(hypot(${RAD}-(W/2-abs(W/2-X)),${RAD}-(H/2-abs(H/2-Y))),${RAD}),255,0),255)'`;
+  const slide = (dx: number) => `x='main_w-overlay_w-24+${dx}+(overlay_w+24)*pow(1-min(max((t-${T0})/${D},0),1),3)'`;
+  run(["ffmpeg", "-y", "-loglevel", "error", "-i", base, "-loop", "1", "-i", note, "-filter_complex",
+    `[1:v]format=rgba,${round},scale=iw*1.35:-1:flags=lanczos,pad=iw+60:ih+60:30:30:color=black@0,split[n][s];` +
+    `[s]colorchannelmixer=rr=0:gg=0:bb=0:aa=0.32,boxblur=14:3[sh];` +
+    `[0:v][sh]overlay=${slide(0)}:y=54:shortest=1:enable='gte(t,${T0})'[v1];[v1][n]overlay=${slide(0)}:y=46:shortest=1:enable='gte(t,${T0})',format=yuv420p[o]`,
+    "-map", "[o]", "-an", "-t", dur(base).toFixed(3), "-c:v", "libx264", "-preset", "medium", "-crf", "17", "-movflags", "+faststart", out]); // 循环的截图会把长度拖长,按底片截齐
+  return out;
+}
 const plan: Record<number, Piece[]> = {
   1: [{ file: R("镜01-会前汇报逾期7") }],
   2: [{ file: R("镜02-九条候选标记完成"), fit: true }],
@@ -51,7 +69,7 @@ const plan: Record<number, Piece[]> = {
   8: [{ file: R("镜08-点原话回放") }],
   9: [{ file: R("镜09-改日期并确认") }],
   10: [{ file: R("镜10-认领消息") }],
-  11: [{ file: MINE(11) || (existsSync(R("镜11-任务提醒")) ? R("镜11-任务提醒") : P(11)) }], // 通知横幅录不到,改拍设置里的任务提醒
+  11: [{ file: shot11() }],
   12: [{ file: R("镜12-下次开会对照") }],
   13: [{ file: R("镜13-看板逾期剩1") }],
   14: [{ file: R("镜14-15-问资料库MOI智能体"), to: 15.3 }],
