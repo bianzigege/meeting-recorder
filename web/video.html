@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>散会即开工 · 演示视频</title>
+  <meta name="description" content="散会即开工 3 分钟演示：开完会自动提出任务、发群认领、每天提醒，下次开会对照完成情况；问资料库交给 MOI 智能体。MatrixNEXT 2026 创意赛道参赛作品。" />
+  <style>
+    :root { --bg: #f5f6f8; --card: #fff; --text: #1c1f24; --muted: #6b7280; --line: #e5e7eb; --primary: #2563eb; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #0f1115; --card: #181b21; --text: #e8eaee; --muted: #9aa1ad; --line: #2a2f38; --primary: #3b82f6; } }
+    * { box-sizing: border-box; margin: 0; }
+    body { background: var(--bg); color: var(--text); font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif; line-height: 1.6; }
+    main { max-width: 1040px; margin: 0 auto; padding: 32px 16px 56px; }
+    h1 { font-size: clamp(26px, 5vw, 38px); letter-spacing: .03em; }
+    .sub { color: var(--muted); margin-top: 6px; }
+    video { display: block; width: 100%; aspect-ratio: 16 / 9; margin-top: 22px; border-radius: 16px; background: #000; box-shadow: 0 24px 60px -30px rgba(15, 23, 42, .45); }
+    .links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+    .links a { display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--text); text-decoration: none; font-weight: 600; font-size: 15px; }
+    .links a.main { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .note { margin-top: 22px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--muted); font-size: 14px; }
+    .note b { color: var(--text); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>🎙️ 散会即开工 · 演示视频</h1>
+    <p class="sub">MatrixNEXT 2026 创意赛道「会议变行动」· 2 分 56 秒 · 中英双语字幕</p>
+    <video src="/v/sanhui-demo.mp4" poster="/video/cover.png" controls preload="metadata" playsinline></video>
+    <div class="links">
+      <a class="main" href="/">打开网页版试一试</a>
+      <a href="https://github.com/bianzigege/meeting-recorder/tree/main/docs">作品说明文档</a>
+      <a href="https://github.com/bianzigege/meeting-recorder">源码</a>
+      <a href="/video/sanhui-demo.mp4" download>下载视频</a>
+    </div>
+    <p class="note"><b>关于这条视频：</b>旁白是 AI 合成的配音。画面是网页版和 Mac 版的真实操作录屏，MOI 控制台是真实页面截图。三场会议是专门写的示例剧本，第 7 镜「22 分钟的会、46 秒提出 7 件事」是作者自己一场真实会议的数据（本地版测的，当时模型用的是 Claude 账号）。</p>
+  </main>
+</body>
+</html>

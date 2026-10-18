@@ -16,3 +16,5 @@ web/lib/seed.js
 
 # 录演示视频时 Mac 版用的示例会议库副本
 .demo-meetings/
+web/media/
+web/lib/media.js

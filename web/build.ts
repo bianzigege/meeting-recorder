@@ -1,7 +1,7 @@
 // 生成网页演示版:bun web/build.ts → web/dist(静态页面)+ web/lib/seed.js(云端函数用的示例数据)
 // 页面和本地版是同一套 index.html / app.js / style.css;demo.js 在浏览器里接管 /api/*,数据存在访客自己的浏览器里。
 import { DEFAULT_TEMPLATES, COMMON_RULES } from "../templates.ts";
-import { readdir, readFile, mkdir, rm, copyFile, writeFile } from "node:fs/promises";
+import { readdir, readFile, mkdir, rm, copyFile, writeFile, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
@@ -52,9 +52,21 @@ for (const id of (await readdir(SAMPLES)).filter((d) => /^\d{8}-\d{6}/.test(d)).
   await mkdir(path.join(DIST, "samples", id), { recursive: true });
   await copyFile(path.join(dir, meta.audioFile), path.join(DIST, "samples", id, meta.audioFile));
 }
+// 演示视频页:/video/。视频和封面放在 web/media/(太大,不进 git),有就带上
+await mkdir(path.join(DIST, "video"), { recursive: true });
+await copyFile(path.join(WEB, "video.html"), path.join(DIST, "video", "index.html"));
+const mediaSizes: Record<string, number> = {};
+for (const [from, to] of [["散会即开工-演示视频.mp4", "sanhui-demo.mp4"], ["封面-横版-1280x720.png", "cover.png"]]) {
+  const src = path.join(WEB, "media", from);
+  if (!existsSync(src)) { console.warn(`没有 web/media/${from},视频页会缺这个文件`); continue; }
+  await copyFile(src, path.join(DIST, "video", to));
+  mediaSizes[to] = (await stat(src)).size;
+}
+// 静态资源取回来时不带文件大小,分段函数(functions/v/[file].js)从这里读
+await writeFile(path.join(WEB, "lib", "media.js"), `// 由 web/build.ts 生成,别手改\nexport default ${JSON.stringify(mediaSizes)};\n`);
 const templates = DEFAULT_TEMPLATES.map((t) => ({ ...t }));
 await writeFile(path.join(DIST, "samples", "seed.json"), JSON.stringify({ version: Date.now(), meetings, templates }));
 const moi = existsSync(path.join(WEB, "moi.json")) ? JSON.parse(await readFile(path.join(WEB, "moi.json"), "utf8")) : {};
 await writeFile(path.join(WEB, "lib", "seed.js"), `// 由 web/build.ts 生成,别手改\nexport default ${JSON.stringify({ meetings: fnMeetings, templates, COMMON_RULES, kbDocs: moi.docs || {} })};\n`);
-await writeFile(path.join(DIST, "_headers"), "/samples/*\n  Cache-Control: public, max-age=3600\n/*\n  X-Content-Type-Options: nosniff\n");
+await writeFile(path.join(DIST, "_headers"), "/samples/*\n  Cache-Control: public, max-age=3600\n/video/*\n  Cache-Control: public, max-age=3600\n/*\n  X-Content-Type-Options: nosniff\n");
 console.log(`已生成 web/dist:${Object.keys(meetings).length} 场示例会议,${templates.length} 个模板`);
