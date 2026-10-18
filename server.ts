@@ -35,12 +35,15 @@ type Config = {
   transcribeModel: string;
   transcribeLanguage: string; // zh / en / 留空自动(仅 api 支持自动)
   // 纪要
-  summaryProvider: "cli" | "api"; // cli = 用本机登录的 Claude Code 账号;api = Anthropic API Key
+  summaryProvider: "cli" | "api" | "openai"; // cli = 本机登录的 Claude Code 账号;api = Anthropic API Key;openai = OpenAI 兼容接口(MOI Genesis 等)
   claudeCliPath: string; // 留空自动查找
   claudeCliModel: string; // opus / sonnet / 完整模型名
   anthropicApiKey: string;
   anthropicBaseUrl: string;
   claudeModel: string;
+  openaiBaseUrl: string; // OpenAI 兼容接口地址,如 https://token.moi.matrixorigin.cn/v1
+  openaiApiKey: string;
+  openaiModel: string;
   summaryPrompt: string;
   myName: string; // 逐字稿里代替「我」的名字
   // 自动化("1" 开 / "0" 关)
@@ -90,6 +93,9 @@ function envDefaults(): Config {
     anthropicApiKey: process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || "",
     anthropicBaseUrl: process.env.ANTHROPIC_BASE_URL || "",
     claudeModel: process.env.CLAUDE_MODEL || "claude-opus-5-5",
+    openaiBaseUrl: process.env.GENESIS_BASE_URL || process.env.OPENAI_BASE_URL || "https://token.moi.matrixorigin.cn/v1",
+    openaiApiKey: process.env.GENESIS_API_KEY || "",
+    openaiModel: process.env.GENESIS_MODEL || "qwen3.8-flash",
     summaryPrompt: DEFAULT_SUMMARY_PROMPT,
     myName: "",
     autoTranscribe: "1",
@@ -136,8 +142,10 @@ function maskConfig(c: Config) {
     ...c,
     transcribeApiKey: mask(c.transcribeApiKey),
     anthropicApiKey: mask(c.anthropicApiKey),
+    openaiApiKey: mask(c.openaiApiKey),
     hasTranscribeKey: !!c.transcribeApiKey,
     hasAnthropicKey: !!c.anthropicApiKey,
+    hasOpenaiKey: !!c.openaiApiKey,
     localTranscribeAvailable: process.platform === "darwin" && (existsSync(TRANSCRIBE_BIN) || existsSync(TRANSCRIBE_SRC)),
     claudeCliFound: findClaudeCli(c.claudeCliPath) || "",
   };
@@ -804,6 +812,69 @@ async function summarizeWithApi(cfg: Config, system: string, prompt: string, onD
   return text;
 }
 
+// 方案 C:OpenAI 兼容接口(MOI Genesis、DeepSeek、硅基流动等),走 /chat/completions 流式
+async function summarizeWithOpenAI(cfg: Config, system: string, prompt: string, onDelta: (t: string) => void): Promise<string> {
+  if (!cfg.openaiApiKey) throw new Error("没有配置 OpenAI 兼容接口的 API Key");
+  const base = (cfg.openaiBaseUrl || "").replace(/\/+$/, "");
+  if (!base) throw new Error("没有配置 OpenAI 兼容接口的 Base URL");
+  const res = await fetch(`${base}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${cfg.openaiApiKey}` },
+    body: JSON.stringify({
+      model: cfg.openaiModel,
+      stream: true,
+      max_tokens: 16000,
+      messages: [{ role: "system", content: system }, { role: "user", content: prompt }],
+    }),
+  });
+  if (!res.ok || !res.body) {
+    const body = await res.text().catch(() => "");
+    let msg = body.slice(0, 300);
+    try { msg = JSON.parse(body)?.error?.message || msg; } catch {}
+    throw new Error(`接口 ${res.status}: ${msg}`);
+  }
+  let text = "";
+  let finish = "";
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let nl;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line.startsWith("data:")) continue;
+      const data = line.slice(5).trim();
+      if (data === "[DONE]") continue;
+      let msg: any;
+      try { msg = JSON.parse(data); } catch { continue; }
+      const choice = msg.choices?.[0];
+      const delta = choice?.delta?.content;
+      if (typeof delta === "string" && delta) { text += delta; onDelta(delta); }
+      if (choice?.finish_reason) finish = choice.finish_reason;
+    }
+  }
+  if (!text) throw new Error("接口没有返回内容");
+  if (finish === "length") text += "\n\n> (内容过长被截断)";
+  return text;
+}
+
+// 统一入口:按设置选调用方式。fast = 小任务(起标题)尽量用便宜模型
+function summarize(cfg: Config, system: string, prompt: string, onDelta: (t: string) => void, fast = false): Promise<string> {
+  if (cfg.summaryProvider === "api") return summarizeWithApi(cfg, system, prompt, onDelta);
+  if (cfg.summaryProvider === "openai") return summarizeWithOpenAI(cfg, system, prompt, onDelta);
+  return summarizeWithCli(fast ? { ...cfg, claudeCliModel: "haiku" } : cfg, system, prompt, onDelta);
+}
+
+function summaryModelLabel(cfg: Config): string {
+  if (cfg.summaryProvider === "api") return cfg.claudeModel;
+  if (cfg.summaryProvider === "openai") return `${cfg.openaiModel} (${cfg.openaiBaseUrl.replace(/^https?:\/\//, "").split("/")[0]})`;
+  return `Claude Code (${cfg.claudeCliModel})`;
+}
+
 // ---------- 模板 ----------
 const TEMPLATES_PATH = path.join(ROOT, "templates.json");
 
@@ -897,9 +968,7 @@ async function runAnalysis(id: string, templateIds: string[], onEvent: (e: Analy
       try {
         const system = `${t.prompt}\n\n${COMMON_RULES}`;
         const onDelta = (text: string) => onEvent({ type: "delta", templateId: t.id, text });
-        let text = cfg.summaryProvider === "api"
-          ? await summarizeWithApi(cfg, system, prompt, onDelta)
-          : await summarizeWithCli(cfg, system, prompt, onDelta);
+        let text = await summarize(cfg, system, prompt, onDelta);
         if (t.format === "mindmap") text = text.replace(/^```(?:markdown|md)?\s*\n([\s\S]*?)\n```\s*$/m, "$1").trim();
         await writeFile(resultPath(dir, t.id), text);
         onEvent({ type: "done", templateId: t.id, text });
@@ -912,7 +981,7 @@ async function runAnalysis(id: string, templateIds: string[], onEvent: (e: Analy
 
     meta.status = failed.length === chosen.length ? "error" : "done";
     meta.error = failed.length ? failed.join("\n") : undefined;
-    meta.claudeModel = cfg.summaryProvider === "api" ? cfg.claudeModel : `Claude Code (${cfg.claudeCliModel})`;
+    meta.claudeModel = summaryModelLabel(cfg);
     await writeMeta(meta);
     return { failed };
   } catch (e: any) {
@@ -959,10 +1028,7 @@ async function autoTitle(id: string, force = false) {
   const system = "根据会议逐字稿起一个中文标题:8 到 16 个字,说清楚聊的主题,不要书名号、引号、日期和「会议」「分享」这类泛词。只输出标题本身。";
   const prompt = `${glossaryNote(await loadGlossary())}\n\n<transcript>\n${transcript.slice(0, 8000)}\n</transcript>`;
   // 起标题用小模型,快、省额度
-  const fast = { ...cfg, claudeCliModel: "haiku" };
-  const raw = cfg.summaryProvider === "api"
-    ? await summarizeWithApi(cfg, system, prompt, () => {})
-    : await summarizeWithCli(fast, system, prompt, () => {});
+  const raw = await summarize(cfg, system, prompt, () => {}, true);
   const title = raw.split("\n").map((l) => l.trim()).find(Boolean)?.replace(/^[#*"'「『《\s]+|[」』》"'*。.\s]+$/g, "").slice(0, 30);
   if (!title) { if (force) throw new Error("没有得到标题"); return; }
   const latest = await readMeta(id); // 期间用户可能自己改过
@@ -1227,8 +1293,7 @@ type AskTurn = { q: string; a: string };
 
 async function askLibrary(question: string, history: AskTurn[], onEvent: (type: string, data: unknown) => void) {
   const cfg = await loadConfig();
-  const call = (system: string, prompt: string, onDelta: (t: string) => void) =>
-    cfg.summaryProvider === "api" ? summarizeWithApi(cfg, system, prompt, onDelta) : summarizeWithCli(cfg, system, prompt, onDelta);
+  const call = (system: string, prompt: string, onDelta: (t: string) => void) => summarize(cfg, system, prompt, onDelta);
 
   const all: { ref: string; meta: Meta; transcript: string; brief: string }[] = [];
   for (const meta of await listMeetings()) {
@@ -1670,7 +1735,7 @@ async function handleApi(req: Request, url: URL): Promise<Response> {
     if (method === "GET") return json(maskConfig(await loadConfig()));
     if (method === "POST") {
       const body = await req.json();
-      for (const k of ["transcribeApiKey", "anthropicApiKey"]) {
+      for (const k of ["transcribeApiKey", "anthropicApiKey", "openaiApiKey"]) {
         if (typeof body[k] === "string" && body[k].includes("…")) delete body[k];
       }
       const before = await loadConfig();

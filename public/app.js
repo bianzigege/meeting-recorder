@@ -1154,6 +1154,7 @@ function updateProviderPanels() {
   document.querySelector('[data-provider="transcribe-local"]').hidden = t !== "local";
   document.querySelector('[data-provider="summary-cli"]').hidden = s !== "cli";
   document.querySelector('[data-provider="summary-api"]').hidden = s !== "api";
+  document.querySelector('[data-provider="summary-openai"]').hidden = s !== "openai";
 }
 form.addEventListener("change", (e) => { if (e.target.type === "radio") updateProviderPanels(); });
 
@@ -1257,6 +1258,7 @@ async function refreshHint() {
   if (cfg.transcribeProvider === "api" && !cfg.hasTranscribeKey) problems.push("转写接口还没填 API Key");
   if (cfg.transcribeProvider === "local" && !cfg.localTranscribeAvailable) problems.push("当前系统不支持本机识别");
   if (cfg.summaryProvider === "api" && !cfg.hasAnthropicKey) problems.push("Claude 还没填 API Key");
+  if (cfg.summaryProvider === "openai" && !cfg.hasOpenaiKey) problems.push("OpenAI 兼容接口还没填 API Key");
   if (cfg.summaryProvider === "cli") {
     const st = await api("/api/claude-status").catch(() => null);
     if (st && !st.loggedIn) problems.push("Claude Code " + st.message);

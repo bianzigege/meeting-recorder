@@ -341,10 +341,11 @@
       </fieldset>
 
       <fieldset>
-        <legend>纪要(Claude)</legend>
+        <legend>纪要(模型)</legend>
         <div class="radio-row">
           <label><input type="radio" name="summaryProvider" value="cli" /> 用我的 Claude 账号(Claude Code)</label>
           <label><input type="radio" name="summaryProvider" value="api" /> Anthropic API Key</label>
+          <label><input type="radio" name="summaryProvider" value="openai" /> OpenAI 兼容接口(MOI Genesis 等)</label>
         </div>
         <div class="sub" data-provider="summary-cli">
           <div class="status-row">
@@ -358,6 +359,12 @@
           <label>API Key <input name="anthropicApiKey" type="password" placeholder="留空则不改" autocomplete="off" /></label>
           <label>Base URL <input name="anthropicBaseUrl" placeholder="留空用官方地址,用中转站就填中转地址" /></label>
           <label>模型 <input name="claudeModel" placeholder="claude-opus-5-5" /></label>
+        </div>
+        <div class="sub" data-provider="summary-openai">
+          <label>Base URL <input name="openaiBaseUrl" placeholder="https://token.moi.matrixorigin.cn/v1" /></label>
+          <label>API Key <input name="openaiApiKey" type="password" placeholder="留空则不改" autocomplete="off" /></label>
+          <label>模型 <input name="openaiModel" placeholder="qwen3.8-flash / deepseek-v4-pro / kimi-k3" /></label>
+          <div class="hint">任何 OpenAI 兼容的 /chat/completions 都行:MOI Genesis、DeepSeek、硅基流动、Ollama。</div>
         </div>
         <div class="hint">纪要和其他分析的提示词在右上角「模板」里修改。</div>
       </fieldset>
