@@ -1,0 +1,149 @@
+// 粗剪:TTS 旁白占位 + 现有录屏和字卡 + 你要录的镜头用占位卡,按分镜拼成一条,定节奏用。
+// bun roughcut.ts <视频素材目录> <分镜.md>
+// 旁白从分镜文件的「录音稿」读;每镜时长取分镜时长,旁白念不完就定格画面顺延。
+import { Page, sleep } from "./cdp.ts";
+import { launchChrome } from "./rec.ts";
+import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { createHash } from "node:crypto";
+import path from "node:path";
+
+const SRC = process.argv[2];
+const STORY = process.argv[3];
+const OUT = path.join(SRC, "粗剪");
+const TMP = "/tmp/sanhui-roughcut";
+mkdirSync(OUT, { recursive: true }); mkdirSync(TMP, { recursive: true }); mkdirSync(path.join(OUT, "旁白-TTS"), { recursive: true });
+const EDGE = `${process.env.HOME}/Desktop/泰语学习/bianzi-thai/.venv/bin/edge-tts`;
+const VOICE = "zh-CN-YunyangNeural", RATE = "+10%";
+const LEAD = 0.3, TAIL = 0.45; // 旁白在镜头开始后 0.3 秒进;念完至少留 0.45 秒
+
+const run = (args: string[]) => { const r = Bun.spawnSync(args); if (r.exitCode) throw new Error(args.slice(0, 3).join(" ") + " 失败:" + r.stderr.toString().slice(-500)); return r.stdout.toString(); };
+const dur = (f: string) => +run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", f]).trim();
+
+// ---------- 读分镜 ----------
+const md = readFileSync(STORY, "utf8");
+const lines: Record<number, string> = {};
+for (const m of md.split("## 录音稿")[1].split(/\n## /)[0].matchAll(/^(\d+)\. (.+)$/gm)) lines[+m[1]] = m[2].trim(); // 只读「录音稿」这一节
+const slots: Record<number, number> = {};
+for (const m of md.matchAll(/^\| (\d+) \| (\d+):(\d{2})–(\d+):(\d{2}) \|/gm)) slots[+m[1]] = (+m[4] * 60 + +m[5]) - (+m[2] * 60 + +m[3]);
+
+// ---------- 镜头素材 ----------
+type Piece = { file: string; from?: number; to?: number; fit?: boolean };
+const R = (n: string) => path.join(SRC, "录屏", n + ".mp4");
+const C = (n: string) => path.join(SRC, "字卡", n + ".mp4");
+const P = (n: number) => path.join(TMP, `占位-镜${n}.mp4`);
+const plan: Record<number, Piece[]> = {
+  1: [{ file: R("镜01-会前汇报逾期7") }],
+  2: [{ file: R("镜02-九条候选标记完成"), fit: true }],
+  3: [{ file: C("镜03-问题") }],
+  4: [{ file: C("镜04-片名") }, { file: R("镜04-网页版全景"), to: 10 }],
+  5: [{ file: P(5) }],
+  6: [{ file: P(6), to: 4 }, { file: R("镜06-逐字稿"), to: 6 }],
+  7: [{ file: R("镜07-待确认任务"), to: 12 }],
+  8: [{ file: R("镜08-点原话回放") }],
+  9: [{ file: R("镜09-改日期并确认") }],
+  10: [{ file: R("镜10-认领消息") }],
+  11: [{ file: P(11) }],
+  12: [{ file: R("镜12-下次开会对照") }],
+  13: [{ file: R("镜13-看板逾期剩1") }],
+  14: [{ file: R("镜14-15-问资料库MOI智能体"), to: 15.3 }],
+  15: [{ file: R("镜14-15-问资料库MOI智能体"), from: 15.3 }],
+  16: [{ file: P(16) }],
+  17: [{ file: C("镜17-网址") }],
+};
+const placeholders: Record<number, string> = {
+  5: "Mac 右上角弹窗「腾讯会议 好像在开会」<br>第一行要有「📊 上次会议…」",
+  6: "菜单栏红点计时 3 秒 → 点停止",
+  11: "macOS 右上角通知「散会即开工 · 任务提醒」",
+  16: "MOI 控制台:知识库 4 份文档「处理成功」<br>→ 智能体「散会即开工助手」详情页",
+};
+
+// ---------- 占位卡 ----------
+await launchChrome();
+const page = await Page.open(9223);
+await page.send("Emulation.setDeviceMetricsOverride", { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false });
+for (const [n, text] of Object.entries(placeholders)) {
+  const html = `<!doctype html><meta charset="utf-8"><style>body{margin:0;width:1920px;height:1080px;background:#e5e7eb;font-family:"PingFang SC",sans-serif;display:flex;align-items:center;justify-content:center}
+  .b{width:1500px;height:760px;border:6px dashed #9ca3af;border-radius:40px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:36px;color:#374151}
+  .t{font-size:44px;color:#6b7280;letter-spacing:.1em}.d{font-size:64px;font-weight:600;line-height:1.5}</style>
+  <div class="b"><div class="t">待你录制 · 第 ${n} 镜</div><div class="d">${text}</div></div>`;
+  await page.goto("data:text/html;charset=utf-8," + encodeURIComponent(html));
+  await sleep(250);
+  const png = path.join(TMP, `占位-镜${n}.png`);
+  await page.shot(png);
+  run(["ffmpeg", "-y", "-loglevel", "error", "-loop", "1", "-t", "12", "-i", png, "-vf", "fps=30,format=yuv420p", "-c:v", "libx264", "-crf", "20", P(+n)]);
+}
+await page.close();
+
+// ---------- TTS ----------
+const tts: Record<number, { file: string; len: number }> = {};
+for (const [n, text] of Object.entries(lines)) {
+  const h = createHash("md5").update(VOICE + RATE + text).digest("hex").slice(0, 8);
+  const f = path.join(OUT, "旁白-TTS", `镜${String(n).padStart(2, "0")}-${h}.mp3`);
+  if (!existsSync(f)) run([EDGE, "--voice", VOICE, `--rate=${RATE}`, "--text", text, "--write-media", f]);
+  tts[+n] = { file: f, len: dur(f) };
+}
+
+// ---------- 逐镜合成画面(定长,不够定格,超了快放或裁掉) ----------
+const segs: string[] = [];
+const timeline: { n: number; start: number; len: number; slot: number; vo: number; over: number }[] = [];
+let t = 0;
+for (const n of Object.keys(plan).map(Number).sort((a, b) => a - b)) {
+  const slot = slots[n];
+  const vo = tts[n]?.len || 0;
+  const len = Math.max(slot, +(LEAD + vo + TAIL).toFixed(2));
+  // 先把这一镜的几段素材各自裁好
+  const parts: string[] = [];
+  let used = 0;
+  plan[n].forEach((pc, i) => {
+    const src = pc.file;
+    const full = dur(src);
+    const from = pc.from || 0;
+    const to = Math.min(pc.to ?? full, full);
+    let d = to - from;
+    const last = i === plan[n].length - 1;
+    const target = last ? len - used : d;
+    const f = path.join(TMP, `seg${n}-${i}.mp4`);
+    let vf = "fps=30,scale=1920:1080,setsar=1";
+    if (last && d > target && pc.fit && d / target <= 1.35) vf = `setpts=PTS*${(target / d).toFixed(4)},` + vf; // 快放到合适长度
+    if (last && d < target) vf += `,tpad=stop_mode=clone:stop_duration=${(target - d).toFixed(3)}`; // 不够就定格
+    run(["ffmpeg", "-y", "-loglevel", "error", "-ss", String(from), "-t", String(d), "-i", src, "-an", "-vf", vf, "-t", target.toFixed(3), "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", f]);
+    used += target;
+    parts.push(f);
+  });
+  segs.push(...parts);
+  timeline.push({ n, start: +t.toFixed(2), len: +len.toFixed(2), slot, vo: +vo.toFixed(2), over: +(len - slot).toFixed(2) });
+  t += len;
+}
+const list = path.join(TMP, "segs.txt");
+writeFileSync(list, segs.map((s) => `file '${s}'`).join("\n"));
+const video = path.join(TMP, "video.mp4");
+run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", list, "-c", "copy", video]);
+
+// ---------- 旁白轨 ----------
+const total = dur(video);
+const inputs: string[] = [], filters: string[] = [];
+timeline.forEach((s, i) => {
+  if (!tts[s.n]) return;
+  inputs.push("-i", tts[s.n].file);
+  const ms = Math.round((s.start + LEAD) * 1000);
+  filters.push(`[${inputs.length / 2}:a]aresample=48000,adelay=${ms}|${ms}[a${i}]`);
+});
+const labels = timeline.filter((s) => tts[s.n]).map((_, i) => `[a${i}]`).join("");
+const out = path.join(OUT, "散会即开工-粗剪v1-TTS旁白占位.mp4");
+run(["ffmpeg", "-y", "-loglevel", "error", "-i", video, ...inputs, "-filter_complex", `${filters.join(";")};${labels}amix=inputs=${filters.length}:normalize=0,loudnorm=I=-16:TP=-1.5:LRA=11,apad,atrim=0:${total.toFixed(3)}[aout]`,
+  "-map", "0:v", "-map", "[aout]", "-c:v", "copy", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", out]);
+
+// ---------- 时间轴 + 字幕 ----------
+const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
+const srtT = (s: number) => { const ms = Math.round(s * 1000); const h = Math.floor(ms / 3600000), m = Math.floor(ms / 60000) % 60, sec = Math.floor(ms / 1000) % 60; return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")},${String(ms % 1000).padStart(3, "0")}`; };
+const srt = timeline.filter((s) => lines[s.n]).map((s, i) => `${i + 1}\n${srtT(s.start + LEAD)} --> ${srtT(s.start + LEAD + s.vo)}\n${lines[s.n]}\n`).join("\n");
+writeFileSync(path.join(OUT, "粗剪v1-旁白字幕.srt"), srt);
+const rows = timeline.map((s) => `| ${s.n} | ${fmt(s.start)} | ${s.len.toFixed(1)} 秒 | ${s.slot} 秒 | ${s.vo.toFixed(1)} 秒 | ${s.over > 0.05 ? `**超 ${s.over.toFixed(1)} 秒**` : "—"} | ${plan[s.n].some((p) => p.file.includes("占位")) ? "占位,待你录" : ""} |`);
+writeFileSync(path.join(OUT, "粗剪v1-时间轴.md"), [
+  "# 粗剪 v1 时间轴(TTS 旁白占位)", "",
+  `- 成片总长 **${fmt(total)}**(分镜计划 2:56)。旁白声音:${VOICE},语速 ${RATE},只是占位。`,
+  "- 「超」表示这一镜旁白念不完,画面定格顺延了;录真声时这几镜可以念快一点,或者删几个字。", "",
+  "| 镜 | 开始 | 本镜时长 | 分镜计划 | TTS 旁白 | 超出 | 备注 |", "|---|---|---|---|---|---|---|", ...rows, ""].join("\n"));
+console.log(`✓ ${out}\n  总长 ${fmt(total)}`);
+for (const s of timeline) if (s.over > 0.05) console.log(`  镜 ${s.n} 超 ${s.over.toFixed(1)} 秒(旁白 ${s.vo.toFixed(1)} 秒 / 计划 ${s.slot} 秒)`);
+process.exit(0);
