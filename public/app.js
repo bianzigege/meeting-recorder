@@ -1556,17 +1556,33 @@ $("#btnCloseClaim").onclick = () => claimDlg.close();
 $("#btnCopyClaim").onclick = async () => { await copyText($("#claimText").value); toast("已复制,去群里粘贴"); };
 
 // ---------- 任务提醒(设置里) ----------
+// 按频率只露出要填的格子:每天 / 每半天填几点;每隔几小时填从几点起、隔几小时;自己定时间点填一串时间
+function syncRemindFields() {
+  const fq = form.elements.remindFrequency.value;
+  $("#remindHourBox").hidden = fq === "custom";
+  $("#remindEveryBox").hidden = fq !== "hours";
+  $("#remindTimesBox").hidden = fq !== "custom";
+  $("#remindHourLabel").textContent = fq === "hours" ? "从" : "提醒时间";
+  $("#remindHourUnit").textContent = fq === "hours" ? "点起" : "点";
+}
 async function loadRemindPreview() {
   const el = $("#remindPreview");
   const f = form.elements;
+  syncRemindFields();
   try {
-    // 用表单里还没保存的时间和频率算「下一次」
-    const d = await api("/api/reminders?" + new URLSearchParams({ hour: f.remindHour.value, frequency: f.remindFrequency.value }));
+    // 用表单里还没保存的频率和时间算「下一次」
+    const d = await api("/api/reminders?" + new URLSearchParams({ hour: f.remindHour.value, frequency: f.remindFrequency.value, every: f.remindEvery.value, times: f.remindTimes.value }));
     const plan = f.remindEnabled.checked ? d.plan : "提醒已关闭。";
     el.innerText = `${plan}\n现在的情况：逾期 ${d.overdue.length} 条 · 今天到期 ${d.today.length} 条 · 明天到期 ${d.tomorrow.length} 条。`;
+    // 时间点输完离开输入框后,换成整理好的写法(「9点 14点半」→「9:00, 14:30」)
+    if (d.times && document.activeElement !== f.remindTimes) f.remindTimes.value = d.times;
   } catch { el.textContent = ""; }
 }
-for (const k of ["remindEnabled", "remindFrequency", "remindHour"]) form.elements[k].addEventListener("change", loadRemindPreview);
+let remindPreviewTimer = null;
+for (const k of ["remindEnabled", "remindFrequency", "remindHour", "remindEvery", "remindTimes"]) {
+  form.elements[k].addEventListener("change", loadRemindPreview);
+  form.elements[k].addEventListener("input", () => { clearTimeout(remindPreviewTimer); remindPreviewTimer = setTimeout(loadRemindPreview, 300); });
+}
 $("#btnRemindTest").onclick = async () => {
   const btn = $("#btnRemindTest");
   btn.disabled = true;

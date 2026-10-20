@@ -334,6 +334,10 @@ button.danger-solid { background: var(--danger); border-color: var(--danger); co
 .inline-num { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
 .inline-num input { width: 64px; padding: 4px 8px; }
 .inline-num select { width: auto; padding: 4px 8px; }
+.inline-num input[type="text"] { width: 180px; }
+.inline-num[hidden] { display: none; }
+.remind-row { flex-wrap: wrap; justify-content: flex-start; gap: 8px 14px; }
+.remind-row #btnRemindTest { margin-left: auto; }
 #claimText { font-family: inherit; font-size: 13.5px; line-height: 1.6; }
 .brief { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); font-size: 13px; }
 .brief.warn { border-color: var(--warn); }

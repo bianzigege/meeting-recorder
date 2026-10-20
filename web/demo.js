@@ -39,7 +39,7 @@
   const SETTINGS = {
     transcribeProvider: "local", localTranscribeAvailable: true, transcribeLanguage: "zh",
     summaryProvider: "openai", openaiBaseUrl: "https://token.moi.matrixorigin.cn/v1", openaiModel: "qwen3.8-flash", openaiApiKey: "", hasOpenaiKey: true,
-    autoTranscribe: "1", autoAnalyze: "0", autoTitle: "1", autoExtractActions: "1", remindEnabled: "1", remindHour: "9", remindFrequency: "daily",
+    autoTranscribe: "1", autoAnalyze: "0", autoTitle: "1", autoExtractActions: "1", remindEnabled: "1", remindHour: "9", remindFrequency: "daily", remindEvery: "3", remindTimes: "9:00, 14:00, 18:00",
     discardShort: "1", autoImportVoiceMemos: "0", backupDir: "", backupScope: "text", myName: "",
   };
 
@@ -119,7 +119,10 @@
     if (p1 === "ping") return json({ ok: true, appMode: false });
     if (p1 === "settings") {
       if (method === "POST") {
-        for (const k of ["remindEnabled", "remindHour", "remindFrequency", "autoExtractActions", "myName"]) if (k in (body || {})) state.settings[k] = body[k];
+        for (const k of ["remindEnabled", "remindHour", "remindFrequency", "remindEvery", "autoExtractActions", "myName"]) if (k in (body || {})) state.settings[k] = body[k];
+        // 时间点和 Mac 版一样存成整理好的写法,一个都没认出来就不改
+        const mins = core.parseRemindTimes(body?.remindTimes);
+        if (mins.length) state.settings.remindTimes = core.formatRemindTimes(mins);
         save();
       }
       return json({ ...SETTINGS, ...state.settings });
@@ -129,9 +132,9 @@
     if (p1 === "briefing") return json(core.briefingFrom(metas(), allActions(), TODAY));
     if (p1 === "reminders") {
       if (method !== "GET") return json({ sent: false });
-      const cfg = { ...SETTINGS, ...state.settings }, q = url.searchParams;
-      const plan = core.remindPlanText(new Date(), { hour: q.get("hour") || cfg.remindHour, frequency: q.get("frequency") || cfg.remindFrequency });
-      return json({ ...core.dueDigestFrom(allActions(), TODAY), plan });
+      const opts = core.remindOpts({ ...SETTINGS, ...state.settings }, url.searchParams);
+      const times = core.formatRemindTimes(core.parseRemindTimes(opts.times));
+      return json({ ...core.dueDigestFrom(allActions(), TODAY), plan: core.remindPlanText(new Date(), opts), times });
     }
     if (p1 === "actions") return json(allActions());
     if (p1 === "templates") return method === "GET" ? json({ templates: state.templates, defaults: state.templates }) : fail("演示版不能改模板");

@@ -381,10 +381,12 @@
 
       <fieldset>
         <legend>任务提醒</legend>
-        <label class="check"><input type="checkbox" name="remindEnabled" /> <span>每天提醒逾期、今天到期、明天到期的任务（macOS 通知，服务运行时才会发）</span></label>
-        <div class="status-row">
-          <label class="inline-num">提醒频率 <select name="remindFrequency"><option value="daily">每天一次</option><option value="halfday">每半天一次</option></select></label>
-          <label class="inline-num">提醒时间 <input name="remindHour" type="number" min="0" max="23" step="1" /> 点</label>
+        <label class="check"><input type="checkbox" name="remindEnabled" /> <span>按下面的频率提醒逾期、今天到期、明天到期的任务（macOS 通知，服务运行时才会发）</span></label>
+        <div class="status-row remind-row">
+          <label class="inline-num">提醒频率 <select name="remindFrequency"><option value="daily">每天一次</option><option value="halfday">每半天一次</option><option value="hours">每隔几小时</option><option value="custom">自己定时间点</option></select></label>
+          <label class="inline-num" id="remindHourBox"><span id="remindHourLabel">提醒时间</span> <input name="remindHour" type="number" min="0" max="23" step="1" /> <span id="remindHourUnit">点</span></label>
+          <label class="inline-num" id="remindEveryBox" hidden>每隔 <input name="remindEvery" type="number" min="1" max="12" step="1" /> 小时</label>
+          <label class="inline-num" id="remindTimesBox" hidden>时间点 <input name="remindTimes" type="text" placeholder="9:00, 14:30, 18:00" autocomplete="off" /></label>
           <button type="button" class="ghost small" id="btnRemindTest">现在发一条看看</button>
         </div>
         <div class="hint" id="remindPreview"></div>

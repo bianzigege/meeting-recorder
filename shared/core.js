@@ -225,38 +225,79 @@ export function dueDigestFrom(all, today) {
 }
 
 // ---------- 提醒时间表 ----------
-// daily = 每天 remindHour 点一次;halfday = remindHour 点和 12 小时后各一次,一天正好两次。
-// 老配置没有 remindFrequency,按 daily 处理。opts = { hour, frequency }
-export function remindHours({ hour, frequency }) {
-  const n = Number.parseInt(hour, 10);
-  const h = Number.isFinite(n) ? Math.min(23, Math.max(0, n)) : 9;
-  return frequency === "halfday" ? [h % 12, (h % 12) + 12] : [h];
+// 四种频率,opts = { hour, frequency, every, times }(都是配置里的字符串):
+//   daily   每天 hour 点一次
+//   halfday hour 点和 12 小时后各一次,一天正好两次
+//   hours   从 hour 点起每隔 every 小时一次(1–12),到当天 24 点前为止,夜里不接着发
+//   custom  自己写的几个时间点,如「9:00, 14:30, 18:00」;一个都没认出来就按 hour 点
+// 老配置没有 remindFrequency,按 daily 处理。时间一律换成「当天第几分钟」。
+const clampInt = (v, lo, hi, d) => { const n = Number.parseInt(v, 10); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
+const clock = (m) => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`;
+
+// 「9:00, 14:30、18点 20点半」都认;超出 0:00–23:59 的丢掉,去重排序
+export function parseRemindTimes(text) {
+  const out = new Set();
+  for (const [, h, m] of String(text || "").matchAll(/(\d{1,2})\s*(?:[:：.点时](\d{1,2}|半)?)?/g)) {
+    const hh = +h, mm = m === "半" ? 30 : +(m || 0);
+    if (hh <= 23 && mm <= 59) out.add(hh * 60 + mm);
+  }
+  return [...out].sort((a, b) => a - b);
 }
+export const formatRemindTimes = (mins) => mins.map(clock).join(", ");
+
+export function remindMinutes({ hour, frequency, every, times } = {}) {
+  const h = clampInt(hour, 0, 23, 9);
+  if (frequency === "halfday") return [h % 12, (h % 12) + 12].map((x) => x * 60);
+  if (frequency === "hours") {
+    const n = clampInt(every, 1, 12, 3), out = [];
+    for (let t = h; t < 24; t += n) out.push(t * 60);
+    return out;
+  }
+  if (frequency === "custom") { const m = parseRemindTimes(times); if (m.length) return m; }
+  return [h * 60];
+}
+
+// 时间表参数:配置里存的;设置页预览时用表单里还没保存的(q = URLSearchParams)覆盖
+export function remindOpts(cfg, q) {
+  const pick = (k, ck) => q?.get(k) || cfg[ck];
+  return { hour: pick("hour", "remindHour"), frequency: pick("frequency", "remindFrequency"), every: pick("every", "remindEvery"), times: q?.has("times") ? q.get("times") : cfg.remindTimes };
+}
+
+const slotKey = (today, m) => `${today} ${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 
 // 现在轮到哪个时段:今天已经到点的最近一个;还没到今天第一个就是 null。
-// key = 日期 + 第几个时段(如 2026-10-18#1),去重就比这个。today 可以传固定的演示日期
+// key = 日期 + 时刻(如 2026-10-18 21:00),去重就比这个。today 可以传固定的演示日期
 export function dueRemindSlot(now, opts, today = localDate(now)) {
-  const hours = remindHours(opts);
-  const i = hours.findLastIndex((h) => h <= now.getHours());
-  return i < 0 ? null : { key: `${today}#${i}`, hour: hours[i] };
+  const cur = now.getHours() * 60 + now.getMinutes();
+  const m = remindMinutes(opts).findLast((x) => x <= cur);
+  return m === undefined ? null : { key: slotKey(today, m), minute: m };
 }
 
-// 去重记录里上次发到哪个时段。老版本只记了日期(lastDailyRun),当作那天的第一个时段
-export const lastRemindKey = (state) => state?.lastSlot || (state?.lastDailyRun ? `${state.lastDailyRun}#0` : "");
+// 去重记录里上次发到哪个时段。老版本记的是「日期#第几个」或只有日期(lastDailyRun),按现在的时间表换成时刻再比
+export function lastRemindKey(state, opts) {
+  const s = state?.lastSlot || (state?.lastDailyRun ? `${state.lastDailyRun}#0` : "");
+  const old = s.match(/^(\d{4}-\d{2}-\d{2})#(\d+)$/);
+  if (!old) return s;
+  const mins = remindMinutes(opts);
+  return slotKey(old[1], mins[Math.min(+old[2], mins.length - 1)]);
+}
 
 // 这次检查要不要发:轮到的时段比上次发的晚才发。
-// 10 分钟查一次也只发一条;电脑睡过了好几个时段,醒来只补最近的一条;当天改了时间不会把发过的时段再发一遍
+// 每分钟查一次也只发一条;电脑睡过了好几个时段,醒来只补最近的一条;当天把时间改早不会把发过的时段再发一遍
 export function remindSlotToSend(now, opts, state, today = localDate(now)) {
   const slot = dueRemindSlot(now, opts, today);
-  return slot && slot.key > lastRemindKey(state) ? slot : null;
+  return slot && slot.key > lastRemindKey(state, opts) ? slot : null;
 }
 
 // 设置页预览:「每天 9:00 和 21:00 各提醒一次，下一次：今天 21:00。」
 export function remindPlanText(now, opts) {
-  const hours = remindHours(opts);
-  const next = hours.find((h) => h > now.getHours());
-  const when = hours.map((h) => `${h}:00`).join(" 和 ");
-  return `每天 ${when} ${hours.length > 1 ? "各" : ""}提醒一次，下一次：${next === undefined ? `明天 ${hours[0]}:00` : `今天 ${next}:00`}。`;
+  const mins = remindMinutes(opts), n = mins.length, list = mins.map(clock);
+  const next = mins.find((m) => m > now.getHours() * 60 + now.getMinutes());
+  let plan;
+  if (opts?.frequency === "hours") plan = `每天从 ${list[0]} 起每隔 ${clampInt(opts.every, 1, 12, 3)} 小时提醒一次（${n > 6 ? `${list[0]} 到 ${list[n - 1]}` : list.join("、")}，一天 ${n} 次）`;
+  else if (opts?.frequency === "custom" && !parseRemindTimes(opts.times).length) plan = `没认出时间点，先按每天 ${list[0]} 提醒一次`;
+  else plan = `每天 ${n === 1 ? list[0] : `${list.slice(0, -1).join("、")} 和 ${list[n - 1]}`} ${n > 1 ? "各" : ""}提醒一次${n > 2 ? `（一天 ${n} 次）` : ""}`;
+  return `${plan}，下一次：${next === undefined ? `明天 ${list[0]}` : `今天 ${clock(next)}`}。`;
 }
 
 // ---------- 问资料库:任务清单 ----------

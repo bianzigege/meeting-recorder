@@ -59,7 +59,9 @@ type Config = {
   autoExtractActions: string; // 转写完自动提取行动项
   remindEnabled: string; // 每天按时提醒到期 / 逾期的任务(macOS 通知)
   remindHour: string; // 几点提醒(0-23)
-  remindFrequency: string; // daily = 每天一次;halfday = 每半天一次(remindHour 点和 12 小时后)
+  remindFrequency: string; // daily = 每天一次;halfday = 每半天一次;hours = 每隔几小时;custom = 自己定时间点(见 core.remindMinutes)
+  remindEvery: string; // hours 时每隔几小时(1-12),从 remindHour 点起
+  remindTimes: string; // custom 时的时间点,如「9:00, 14:30, 18:00」
 };
 
 const DEFAULT_SUMMARY_PROMPT = `你是一位专业的会议记录员。根据下面的会议转写文本,输出一份结构化的中文会议纪要,使用 Markdown 格式,包含以下部分:
@@ -110,6 +112,8 @@ function envDefaults(): Config {
     remindEnabled: "1",
     remindHour: "9",
     remindFrequency: "daily",
+    remindEvery: "3",
+    remindTimes: "9:00, 14:00, 18:00",
     autoTitle: "1",
     discardShort: "1",
     backupDir: "",
@@ -1413,7 +1417,7 @@ async function resolveReview(id: string, actionId: string, accept: boolean, newM
 }
 
 // ---------- 到期提醒 ----------
-// 到点扫一遍所有未完成任务:逾期、今天到期、明天到期,合成一条 macOS 通知。每天一次或每半天一次,时间表在 core.remindHours。
+// 到点扫一遍所有未完成任务:逾期、今天到期、明天到期,合成一条 macOS 通知。每天 / 每半天 / 每隔几小时 / 自己定时间点,时间表在 core.remindMinutes。
 // 指到别的会议库(示例数据)时,提醒记录跟着那个库走,不碰真实库的记录
 const REMIND_STATE_PATH = process.env.MEETINGS_DIR ? path.join(MEETINGS_DIR, ".reminders.json") : path.join(ROOT, "reminders.json");
 
@@ -1466,14 +1470,15 @@ async function reminderTick() {
   if (cfg.remindEnabled !== "1") return;
   let state: { lastSlot?: string; lastDailyRun?: string } = {};
   try { state = JSON.parse(await readFile(REMIND_STATE_PATH, "utf8")); } catch {}
-  const slot = core.remindSlotToSend(new Date(), { hour: cfg.remindHour, frequency: cfg.remindFrequency }, state, todayStr());
+  const slot = core.remindSlotToSend(new Date(), core.remindOpts(cfg), state, todayStr());
   if (!slot) return;
   const r = await sendDueReminder();
   await writeFile(REMIND_STATE_PATH, JSON.stringify({ lastSlot: slot.key, lastResult: { sent: r.sent, overdue: r.overdue.length, today: r.today.length, tomorrow: r.tomorrow.length } }));
   console.log(`任务提醒:${r.sent ? "已发送" : "没有到期任务"}(逾期 ${r.overdue.length} / 今天 ${r.today.length} / 明天 ${r.tomorrow.length})`);
 }
 setTimeout(() => reminderTick().catch((e) => console.error("任务提醒失败:", e?.message || e)), 20_000);
-setInterval(() => reminderTick().catch((e) => console.error("任务提醒失败:", e?.message || e)), 10 * 60_000);
+// 每分钟查一次,自己定的时间点(如 14:30)准点发
+setInterval(() => reminderTick().catch((e) => console.error("任务提醒失败:", e?.message || e)), 60_000);
 
 type AskTurn = { q: string; a: string };
 
@@ -1932,6 +1937,12 @@ async function handleApi(req: Request, url: URL): Promise<Response> {
         if (typeof body[k] === "string" && body[k].includes("…")) delete body[k];
       }
       const before = await loadConfig();
+      // 时间点存成整理好的写法;一个都没认出来就不改原来的
+      if (typeof body.remindTimes === "string") {
+        const mins = core.parseRemindTimes(body.remindTimes);
+        if (mins.length) body.remindTimes = core.formatRemindTimes(mins);
+        else delete body.remindTimes;
+      }
       // 换了备份位置,之前的「上次备份」记录就不算数了
       if (typeof body.backupDir === "string" && body.backupDir !== before.backupDir) backupState = { running: false };
       if (body.autoImportVoiceMemos === "1" && before.autoImportVoiceMemos !== "1") {
@@ -2093,11 +2104,9 @@ async function handleApi(req: Request, url: URL): Promise<Response> {
 
   if (parts[1] === "reminders") {
     if (method === "GET") {
-      // 设置页还没保存时,用表单里的时间和频率算预览
-      const cfg = await loadConfig();
-      const q = url.searchParams;
-      const opts = { hour: q.get("hour") || cfg.remindHour, frequency: q.get("frequency") || cfg.remindFrequency };
-      return json({ ...(await dueDigest()), plan: core.remindPlanText(new Date(), opts) });
+      // 设置页还没保存时,用表单里的频率和时间算预览;times 回整理好的时间点,页面拿去回填输入框
+      const opts = core.remindOpts(await loadConfig(), url.searchParams);
+      return json({ ...(await dueDigest()), plan: core.remindPlanText(new Date(), opts), times: core.formatRemindTimes(core.parseRemindTimes(opts.times)) });
     }
     if (method === "POST") return json(await sendDueReminder(true));
   }
